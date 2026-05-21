@@ -1,0 +1,224 @@
+{
+  "Comment": "GroupIQ Booking Workflow — Orchestrates the full lifecycle from inquiry to proposal delivery",
+  "StartAt": "ValidateInquiry",
+  "States": {
+    "ValidateInquiry": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${intake_lambda_arn}",
+        "Payload": {
+          "booking_id.$": "$.booking_id",
+          "version.$": "$.version",
+          "action": "validate"
+        }
+      },
+      "ResultPath": "$.validation",
+      "ResultSelector": {
+        "status.$": "$.Payload.status",
+        "booking_id.$": "$.Payload.booking_id"
+      },
+      "Next": "GenerateProposal",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleError",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "GenerateProposal": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${proposal_lambda_arn}",
+        "Payload": {
+          "booking_id.$": "$.booking_id"
+        }
+      },
+      "ResultPath": "$.proposal",
+      "ResultSelector": {
+        "status.$": "$.Payload.status",
+        "proposal_s3_key.$": "$.Payload.proposal_s3_key",
+        "proposal_summary.$": "$.Payload.proposal_summary"
+      },
+      "TimeoutSeconds": 180,
+      "Next": "CheckProposalGenerated",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleError",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed", "Lambda.ServiceException"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ]
+    },
+
+    "CheckProposalGenerated": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.proposal.status",
+          "StringEquals": "PROPOSAL_GENERATED",
+          "Next": "SendProposalEmail"
+        }
+      ],
+      "Default": "HandleError"
+    },
+
+    "SendProposalEmail": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${notification_lambda_arn}",
+        "Payload": {
+          "booking_id.$": "$.booking_id",
+          "action": "send_proposal"
+        }
+      },
+      "ResultPath": "$.notification",
+      "ResultSelector": {
+        "status.$": "$.Payload.status",
+        "email_message_id.$": "$.Payload.email_message_id"
+      },
+      "Next": "WaitForClientResponse",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleError",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "WaitForClientResponse": {
+      "Type": "Wait",
+      "Comment": "Wait for client to respond with acceptance or counter-offer (callback pattern in production)",
+      "Seconds": 86400,
+      "Next": "CheckNegotiationNeeded"
+    },
+
+    "CheckNegotiationNeeded": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.negotiation_needed",
+          "BooleanEquals": true,
+          "Next": "NegotiateCounterOffer"
+        },
+        {
+          "Variable": "$.accepted",
+          "BooleanEquals": true,
+          "Next": "BookingAccepted"
+        }
+      ],
+      "Default": "ProposalExpired"
+    },
+
+    "NegotiateCounterOffer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${negotiation_lambda_arn}",
+        "Payload": {
+          "booking_id.$": "$.booking_id",
+          "counter_offer.$": "$.counter_offer"
+        }
+      },
+      "ResultPath": "$.negotiation_result",
+      "ResultSelector": {
+        "decision.$": "$.Payload.decision",
+        "message_to_client.$": "$.Payload.message_to_client",
+        "status.$": "$.Payload.status"
+      },
+      "Next": "EvaluateNegotiationResult",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleError",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "EvaluateNegotiationResult": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.negotiation_result.decision",
+          "StringEquals": "ACCEPT",
+          "Next": "BookingAccepted"
+        },
+        {
+          "Variable": "$.negotiation_result.decision",
+          "StringEquals": "ESCALATE",
+          "Next": "EscalateToSales"
+        },
+        {
+          "Variable": "$.negotiation_result.decision",
+          "StringEquals": "COUNTER",
+          "Next": "SendCounterResponse"
+        }
+      ],
+      "Default": "EscalateToSales"
+    },
+
+    "SendCounterResponse": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${notification_lambda_arn}",
+        "Payload": {
+          "booking_id.$": "$.booking_id",
+          "action": "send_counter_response",
+          "message_to_client.$": "$.negotiation_result.message_to_client"
+        }
+      },
+      "ResultPath": "$.counter_sent",
+      "Next": "WaitForClientResponse"
+    },
+
+    "BookingAccepted": {
+      "Type": "Succeed",
+      "Comment": "Booking accepted — triggers downstream PMS integration"
+    },
+
+    "EscalateToSales": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${notification_lambda_arn}",
+        "Payload": {
+          "booking_id.$": "$.booking_id",
+          "action": "escalate"
+        }
+      },
+      "ResultPath": "$.escalation",
+      "Next": "EscalationComplete"
+    },
+
+    "EscalationComplete": {
+      "Type": "Succeed",
+      "Comment": "Escalated to human sales manager"
+    },
+
+    "ProposalExpired": {
+      "Type": "Succeed",
+      "Comment": "No response received within validity window"
+    },
+
+    "HandleError": {
+      "Type": "Fail",
+      "Cause": "Workflow execution failed",
+      "Error": "WorkflowError"
+    }
+  }
+}

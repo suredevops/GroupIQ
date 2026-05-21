@@ -1,0 +1,1 @@
+{"statusCode": 201, "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}, "body": "{\"message\": \"Group booking inquiry received\", \"booking_id\": \"GRP-20260517-4D24F24E\", \"estimated_revenue\": 44850.0, \"status\": \"INQUIRY_RECEIVED\"}"}
