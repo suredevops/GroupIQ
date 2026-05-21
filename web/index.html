@@ -25,7 +25,7 @@
         .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
         .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #dc2626, #f97316); border-radius: 14px 14px 0 0; }
         .stat-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
-        .stat-card .value { font-size: 32px; font-weight: 800; margin-top: 8px; color: #1e293b; }
+        .stat-card .value { font-size: 28px; font-weight: 800; margin-top: 8px; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .stat-card .sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 
         .tabs { display: flex; gap: 2px; margin-bottom: 22px; background: #f1f5f9; border-radius: 10px; padding: 4px; border: 1px solid #e2e8f0; width: fit-content; }
@@ -556,6 +556,14 @@
             if (name === 'reports') loadReport();
         }
 
+        function formatCurrency(amount) {
+            if (amount >= 1000000000) return '$' + (amount / 1000000000).toFixed(1) + 'B';
+            if (amount >= 1000000) return '$' + (amount / 1000000).toFixed(1) + 'M';
+            if (amount >= 100000) return '$' + (amount / 1000).toFixed(0) + 'K';
+            if (amount >= 10000) return '$' + (amount / 1000).toFixed(1) + 'K';
+            return '$' + amount.toLocaleString(undefined, {maximumFractionDigits: 0});
+        }
+
         function getStatusBadge(status) {
             const map = {
                 'INQUIRY_RECEIVED': 'received',
@@ -676,7 +684,8 @@
                 });
 
                 document.getElementById('stat-total').textContent = data.bookings.length;
-                document.getElementById('stat-revenue').textContent = '$' + totalRevenue.toLocaleString();
+                document.getElementById('stat-revenue').textContent = formatCurrency(totalRevenue);
+                document.getElementById('stat-revenue').title = '$' + totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 document.getElementById('stat-rooms').textContent = Math.round(totalRooms / data.bookings.length);
                 document.getElementById('stat-nights').textContent = Math.round(totalNights / data.bookings.length);
                 document.getElementById('stat-active').textContent = active;
