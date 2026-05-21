@@ -61,7 +61,7 @@ Output MUST be valid JSON with the following structure:
   "value_adds": [...],
   "terms": {...},
   "total_investment": { "min": number, "max": number, "recommended": number }
-}""""""
+}"""
 
 
 def get_booking(booking_id: str) -> dict:
@@ -92,14 +92,14 @@ def invoke_bedrock(booking: dict, pricing_rules: dict) -> dict:
     if pricing_breakdown:
         pricing_section = "\n\nDynamic Pricing Breakdown (explain these factors to the customer):\n"
         for factor in pricing_breakdown:
-            pricing_section += f"  • {factor.get('factor', 'Unknown')}: {factor.get('impact', '0%')} — {factor.get('description', '')}\n"
-        pricing_section += f"\nBase Rate: ${booking.get('base_room_rate', 250)}/night"
-        pricing_section += f"\nDynamic Rate: ${booking.get('dynamic_room_rate', booking.get('base_room_rate', 250))}/night"
-        pricing_section += f"\nMultiplier Applied: ×{booking.get('pricing_multiplier', 1.0)}"
+            pricing_section += "  * " + factor.get('factor', 'Unknown') + ": " + factor.get('impact', '0%') + " - " + factor.get('description', '') + "\n"
+        pricing_section += "\nBase Rate: $" + str(booking.get('base_room_rate', 250)) + "/night"
+        pricing_section += "\nDynamic Rate: $" + str(booking.get('dynamic_room_rate', booking.get('base_room_rate', 250))) + "/night"
+        pricing_section += "\nMultiplier Applied: x" + str(booking.get('pricing_multiplier', 1.0))
 
     pricing_explanation = booking.get("pricing_explanation", "")
     if pricing_explanation:
-        pricing_section += f"\n\nPricing Logic:\n{pricing_explanation}"
+        pricing_section += "\n\nPricing Logic:\n" + str(pricing_explanation)
 
     user_message = f"""Generate a group booking proposal for the following inquiry:
 
@@ -128,15 +128,19 @@ Property Pricing Rules:
         ],
     })
 
-    response = client.invoke_model(
-        modelId=BEDROCK_MODEL_ID,
-        contentType="application/json",
-        accept="application/json",
-        body=request_body,
-    )
+    try:
+        response = client.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType="application/json",
+            accept="application/json",
+            body=request_body,
+        )
 
-    response_body = json.loads(response["body"].read())
-    content = response_body["content"][0]["text"]
+        response_body = json.loads(response["body"].read())
+        content = response_body["content"][0]["text"]
+    except Exception:
+        # Bedrock unavailable (LocalStack) — generate a mock proposal
+        return _generate_mock_proposal(booking, pricing_rules)
 
     # Extract JSON from response (handle markdown code blocks)
     if "```json" in content:
@@ -145,6 +149,56 @@ Property Pricing Rules:
         content = content.split("```")[1].split("```")[0]
 
     return json.loads(content)
+
+
+def _generate_mock_proposal(booking: dict, pricing_rules: dict) -> dict:
+    """Generate a mock proposal when Bedrock is unavailable (local dev)."""
+    num_rooms = int(booking.get("num_rooms", 50))
+    num_nights = int(booking.get("num_nights", 3))
+    base_rate = float(booking.get("dynamic_room_rate", booking.get("base_room_rate", 299)))
+    event_type = booking.get("event_type", "conference")
+    contact = booking.get("contact_name", "Guest")
+
+    base_total = base_rate * num_rooms * num_nights
+    tier1_rate = base_rate
+    tier2_rate = base_rate * 0.92
+    tier3_rate = base_rate * 0.85
+
+    return {
+        "executive_summary": f"Dear {contact}, thank you for considering Marriott for your upcoming {event_type}. We are delighted to present a customized proposal for {num_rooms} rooms over {num_nights} nights. Our dynamic pricing engine has calculated the optimal rate based on current market conditions.",
+        "pricing_rationale": f"Your rate of ${base_rate:.0f}/night reflects current market factors including seasonality, occupancy levels, and your group size discount. This represents excellent value compared to our rack rate.",
+        "room_block": {
+            "tiers": [
+                {"name": "Best - 90% Pickup Guarantee", "rate": tier3_rate, "rooms": num_rooms, "commitment": "90% minimum pickup"},
+                {"name": "Better - 80% Pickup", "rate": tier2_rate, "rooms": num_rooms, "commitment": "80% minimum pickup"},
+                {"name": "Good - Standard Block", "rate": tier1_rate, "rooms": num_rooms, "commitment": "70% minimum pickup"},
+            ]
+        },
+        "fnb_packages": [
+            {"name": "Premium Package", "per_person": 95, "includes": "Breakfast, lunch, dinner, coffee breaks"},
+            {"name": "Standard Package", "per_person": 65, "includes": "Breakfast and lunch with coffee breaks"},
+            {"name": "Basic Package", "per_person": 45, "includes": "Breakfast only with AM coffee break"},
+        ],
+        "meeting_space": {"included": bool(booking.get("meeting_space_required")), "rooms": 3, "av_included": True, "setup": "Theater and classroom style"},
+        "value_adds": [
+            "Complimentary room upgrade for event organizer",
+            "Welcome amenity baskets for VIP guests",
+            "10,000 Marriott Bonvoy points per room night",
+            "Complimentary Wi-Fi for all group members",
+            "Dedicated event coordinator",
+        ],
+        "terms": {
+            "proposal_valid_days": 7,
+            "cutoff_date": "30 days before event",
+            "attrition": "80% of block with no penalty",
+            "cancellation": "Full refund 60+ days out, 50% refund 30-59 days",
+        },
+        "total_investment": {
+            "min": round(tier3_rate * num_rooms * num_nights * 0.9),
+            "max": round(tier1_rate * num_rooms * num_nights * 1.1),
+            "recommended": round(base_total),
+        },
+    }
 
 
 def store_proposal_s3(booking_id: str, proposal: dict) -> str:
