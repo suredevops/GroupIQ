@@ -8,88 +8,89 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: linear-gradient(135deg, #0c1220 0%, #1a1040 50%, #0c1220 100%); color: #e2e8f0; min-height: 100vh; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; }
 
-        .header { background: linear-gradient(135deg, #8b1a2b 0%, #b91c3c 50%, #8b1a2b 100%); padding: 18px 40px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 30px rgba(185, 28, 60, 0.3); }
-        .header-left { display: flex; align-items: center; gap: 16px; }
-        .header-logo { height: 36px; filter: brightness(0) invert(1); }
-        .header h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; color: white; }
-        .header .subtitle { opacity: 0.9; font-size: 12px; margin-top: 2px; color: rgba(255,255,255,0.8); font-weight: 400; }
-        .header .status { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.15); padding: 8px 16px; border-radius: 20px; font-size: 13px; color: white; }
-        .header .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 8px #4ade80; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { box-shadow: 0 0 8px #4ade80; } 50% { box-shadow: 0 0 20px #4ade80; } }
+        .header { background: white; padding: 16px 40px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-bottom: 1px solid #e2e8f0; }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-logo { height: 32px; }
+        .header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #1e293b; }
+        .header .subtitle { font-size: 11px; margin-top: 1px; color: #64748b; font-weight: 400; }
+        .header .status { display: flex; align-items: center; gap: 8px; background: #f0fdf4; padding: 7px 14px; border-radius: 20px; font-size: 12px; color: #166534; border: 1px solid #bbf7d0; }
+        .header .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px #22c55e; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { box-shadow: 0 0 6px #22c55e; } 50% { box-shadow: 0 0 14px #22c55e; } }
 
-        .container { max-width: 1300px; margin: 0 auto; padding: 30px 24px; }
+        .container { max-width: 1320px; margin: 0 auto; padding: 28px 24px; }
 
-        .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 28px; }
-        .stat-card { background: linear-gradient(145deg, #1e1b3a 0%, #16132e 100%); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 24px; position: relative; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
-        .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #b91c3c, #e6394a); border-radius: 16px 16px 0 0; }
-        .stat-card .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; }
-        .stat-card .value { font-size: 36px; font-weight: 800; margin-top: 10px; background: linear-gradient(135deg, #f0b433, #e6394a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .stat-card .sub { font-size: 12px; color: #64748b; margin-top: 6px; }
+        .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 26px; }
+        .stat-card { background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px 22px; position: relative; overflow: hidden; transition: transform 0.2s, box-shadow 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+        .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #dc2626, #f97316); border-radius: 14px 14px 0 0; }
+        .stat-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .stat-card .value { font-size: 32px; font-weight: 800; margin-top: 8px; color: #1e293b; }
+        .stat-card .sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 
-        .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #1e1b3a; border-radius: 12px; padding: 4px; border: 1px solid rgba(255,255,255,0.06); width: fit-content; }
-        .tab { padding: 10px 22px; cursor: pointer; font-weight: 500; font-size: 13px; color: #94a3b8; border-radius: 8px; transition: all 0.2s; }
-        .tab.active { color: white; background: linear-gradient(135deg, #b91c3c, #e6394a); box-shadow: 0 4px 12px rgba(185, 28, 60, 0.3); }
-        .tab:hover:not(.active) { color: #e2e8f0; background: rgba(255,255,255,0.05); }
+        .tabs { display: flex; gap: 2px; margin-bottom: 22px; background: #f1f5f9; border-radius: 10px; padding: 4px; border: 1px solid #e2e8f0; width: fit-content; }
+        .tab { padding: 9px 20px; cursor: pointer; font-weight: 500; font-size: 13px; color: #64748b; border-radius: 7px; transition: all 0.2s; }
+        .tab.active { color: white; background: #dc2626; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25); }
+        .tab:hover:not(.active) { color: #1e293b; background: white; }
 
-        .section { background: linear-gradient(145deg, #1e1b3a 0%, #16132e 100%); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 28px; margin-bottom: 24px; }
-        .section h2 { font-size: 18px; margin-bottom: 20px; color: #e2e8f0; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-        .section h2::before { content: ''; width: 4px; height: 20px; background: linear-gradient(180deg, #b91c3c, #f0b433); border-radius: 2px; }
+        .section { background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 26px; margin-bottom: 22px; }
+        .section h2 { font-size: 17px; margin-bottom: 18px; color: #1e293b; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        .section h2::before { content: ''; width: 4px; height: 18px; background: linear-gradient(180deg, #dc2626, #f97316); border-radius: 2px; }
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
         table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 14px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.06); }
-        td { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 13px; color: #cbd5e1; }
+        th { text-align: left; padding: 12px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; font-weight: 600; border-bottom: 2px solid #f1f5f9; background: #f8fafc; }
+        td { padding: 14px; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #334155; }
         tr { transition: background 0.15s; }
-        tr:hover { background: rgba(102, 126, 234, 0.05); }
-        td strong { color: #f0b433; font-weight: 600; font-size: 12px; }
+        tr:hover { background: #fafbfc; }
+        td strong { color: #dc2626; font-weight: 600; font-size: 12px; }
 
-        .badge { padding: 5px 12px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: inline-block; }
-        .badge-received { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
-        .badge-generated { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
-        .badge-sent { background: rgba(234, 179, 8, 0.15); color: #fbbf24; border: 1px solid rgba(234, 179, 8, 0.3); }
-        .badge-negotiating { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
-        .badge-accepted { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .badge-escalated { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .badge { padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; display: inline-block; }
+        .badge-received { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+        .badge-generated { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+        .badge-sent { background: #fefce8; color: #ca8a04; border: 1px solid #fde68a; }
+        .badge-negotiating { background: #faf5ff; color: #9333ea; border: 1px solid #e9d5ff; }
+        .badge-accepted { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+        .badge-escalated { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .form-group { display: flex; flex-direction: column; }
-        .form-group label { font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
-        .form-group input, .form-group select, .form-group textarea { padding: 12px 14px; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; font-size: 14px; font-family: inherit; background: #0f0f23; color: #e2e8f0; transition: all 0.2s; }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #b91c3c; box-shadow: 0 0 0 3px rgba(185, 28, 60, 0.15); }
-        .form-group input::placeholder, .form-group textarea::placeholder { color: #475569; }
+        .form-group label { font-size: 12px; font-weight: 600; margin-bottom: 5px; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; }
+        .form-group input, .form-group select, .form-group textarea { padding: 11px 14px; border: 1px solid #e2e8f0; border-radius: 9px; font-size: 14px; font-family: inherit; background: white; color: #1e293b; transition: all 0.2s; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08); }
+        .form-group input::placeholder, .form-group textarea::placeholder { color: #94a3b8; }
         .form-full { grid-column: 1 / -1; }
 
-        .btn { padding: 12px 28px; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.5px; }
-        .btn-primary { background: linear-gradient(135deg, #b91c3c, #e6394a); color: white; box-shadow: 0 4px 15px rgba(185, 28, 60, 0.3); }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(185, 28, 60, 0.4); }
-        .btn-secondary { background: rgba(255,255,255,0.05); color: #94a3b8; border: 1px solid rgba(255,255,255,0.1); }
-        .btn-secondary:hover { background: rgba(255,255,255,0.1); color: #e2e8f0; }
+        .btn { padding: 11px 24px; border: none; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.2px; }
+        .btn-primary { background: #dc2626; color: white; box-shadow: 0 2px 8px rgba(220, 38, 38, 0.2); }
+        .btn-primary:hover { background: #b91c1c; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); }
+        .btn-secondary { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+        .btn-secondary:hover { background: #f1f5f9; color: #1e293b; }
 
-        .actions { display: flex; gap: 12px; margin-top: 24px; }
+        .actions { display: flex; gap: 10px; margin-top: 22px; }
 
-        .toast { position: fixed; bottom: 24px; right: 24px; background: linear-gradient(135deg, #b91c3c, #e6394a); color: white; padding: 16px 24px; border-radius: 12px; font-size: 13px; font-weight: 500; display: none; box-shadow: 0 8px 30px rgba(185, 28, 60, 0.4); z-index: 1000; max-width: 400px; }
+        .toast { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: white; padding: 14px 22px; border-radius: 10px; font-size: 13px; font-weight: 500; display: none; box-shadow: 0 10px 40px rgba(0,0,0,0.15); z-index: 1000; max-width: 400px; }
         .toast.show { display: block; animation: slideIn 0.3s ease; }
         @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-        .negotiation-result { background: rgba(185, 28, 60, 0.08); border: 1px solid rgba(185, 28, 60, 0.2); border-radius: 12px; padding: 20px; margin-top: 20px; display: none; }
+        .negotiation-result { background: #fafbfc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-top: 18px; display: none; }
         .negotiation-result.show { display: block; animation: slideIn 0.3s ease; }
-        .negotiation-result h3 { color: #e2e8f0; margin-bottom: 12px; font-size: 15px; }
-        .negotiation-result p { color: #94a3b8; font-size: 13px; line-height: 1.6; }
+        .negotiation-result h3 { color: #1e293b; margin-bottom: 10px; font-size: 15px; }
+        .negotiation-result p { color: #475569; font-size: 13px; line-height: 1.6; }
 
-        .empty-state { text-align: center; padding: 60px 20px; color: #64748b; }
-        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state { text-align: center; padding: 50px 20px; color: #94a3b8; }
+        .empty-state .icon { font-size: 42px; margin-bottom: 14px; }
         .empty-state p { font-size: 14px; }
 
         @media (max-width: 768px) {
             .stats { grid-template-columns: repeat(2, 1fr); }
             .form-grid { grid-template-columns: 1fr; }
-            .header { padding: 16px 20px; }
-            .container { padding: 20px 16px; }
+            .header { padding: 14px 18px; }
+            .container { padding: 18px 14px; }
+            .tabs { flex-wrap: wrap; }
         }
     </style>
 </head>
@@ -99,12 +100,12 @@
             <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Marriott_International.svg/2560px-Marriott_International.svg.png" alt="Marriott" class="header-logo">
             <div>
                 <h1>GroupIQ</h1>
-                <div class="subtitle">AI Group Booking Negotiation Agent — Marriott International</div>
+                <div class="subtitle">AI-Powered Group Booking Platform</div>
             </div>
         </div>
         <div class="status">
             <span class="status-dot"></span>
-            <span>LocalStack Connected</span>
+            <span>System Online</span>
         </div>
     </div>
 
@@ -141,6 +142,8 @@
             <div class="tab active" onclick="switchTab('bookings')">All Bookings</div>
             <div class="tab" onclick="switchTab('new')">New Inquiry</div>
             <div class="tab" onclick="switchTab('negotiate')">Negotiate</div>
+            <div class="tab" onclick="switchTab('properties')">Nearby Properties</div>
+            <div class="tab" onclick="switchTab('reports')">Reports</div>
             <div class="tab" onclick="switchTab('reminders')">Reminders</div>
             <div class="tab" onclick="switchTab('compliance')">TIP.AI Compliance</div>
         </div>
@@ -260,6 +263,63 @@
             </div>
         </div>
 
+        <div class="tab-content" id="tab-properties">
+            <div class="section">
+                <h2>Search Nearby Marriott Properties</h2>
+                <p style="color:#64748b; margin-bottom:20px; font-size:14px;">Check available rooms at Marriott properties near a specific location. Select a city to view all nearby hotels and their real-time availability.</p>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Country</label>
+                        <select id="p-country" onchange="loadCities()">
+                            <option value="India">India</option>
+                            <option value="USA">USA</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>City</label>
+                        <select id="p-city">
+                            <option value="HYD">Hyderabad</option>
+                            <option value="BLR">Bengaluru</option>
+                            <option value="BOM">Mumbai</option>
+                            <option value="DEL">New Delhi / NCR</option>
+                            <option value="MAA">Chennai</option>
+                            <option value="GOA">Goa</option>
+                            <option value="JAI">Jaipur</option>
+                            <option value="PNQ">Pune</option>
+                            <option value="CCU">Kolkata</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Rooms Needed</label>
+                        <input type="number" id="p-rooms" value="50" min="1" placeholder="e.g. 50">
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="searchProperties()">Search Availability</button>
+                </div>
+                <div id="properties-result" style="margin-top:24px;"></div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-reports">
+            <div class="section">
+                <h2>Booking Reports & Analytics</h2>
+                <p style="color:#64748b; margin-bottom:20px; font-size:14px;">View booking performance data. All bookings are permanently stored and available even after LocalStack restarts.</p>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Report Period</label>
+                        <select id="rpt-period" onchange="loadReport()">
+                            <option value="week">This Week (Last 7 Days)</option>
+                            <option value="month" selected>This Month (Last 30 Days)</option>
+                            <option value="year">This Year (Last 365 Days)</option>
+                            <option value="all">All Time</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="report-result" style="margin-top:20px;"></div>
+            </div>
+        </div>
+
         <div class="tab-content" id="tab-reminders">
             <div class="section">
                 <h2>Event Reminders</h2>
@@ -280,7 +340,7 @@
         <div class="tab-content" id="tab-compliance">
             <div class="section">
                 <h2>TIP.AI Enterprise Strategy Engine</h2>
-                <p style="color:#94a3b8; margin-bottom:20px; font-size:14px;">Governance, compliance, and risk assessment powered by TIP.AI v2.1 — ensuring all AI-driven decisions meet enterprise strategy policies, regulatory compliance (EU AI Act, ISO 42001, NIST AI RMF), and negotiation guardrails.</p>
+                <p style="color:#64748b; margin-bottom:20px; font-size:14px;">Governance, compliance, and risk assessment powered by TIP.AI v2.1 — ensuring all AI-driven decisions meet enterprise strategy policies, regulatory compliance (EU AI Act, ISO 42001, NIST AI RMF), and negotiation guardrails.</p>
                 <div class="form-grid">
                     <div class="form-group">
                         <label>Booking ID for Compliance Check</label>
@@ -314,6 +374,8 @@
             document.getElementById('tab-' + name).classList.add('active');
             event.target.classList.add('active');
             if (name === 'bookings') loadBookings();
+            if (name === 'properties') searchProperties();
+            if (name === 'reports') loadReport();
         }
 
         function getStatusBadge(status) {
@@ -441,11 +503,39 @@
                 resultDiv.classList.add('show');
 
                 const decisionBadge = getStatusBadge(data.decision || data.status);
+                let availabilityHtml = '';
+                if (data.property_availability && data.property_availability.nearby_alternatives) {
+                    const alts = data.property_availability.nearby_alternatives;
+                    if (alts.length > 0) {
+                        availabilityHtml = `
+                            <div style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(0,0,0,0.08);">
+                                <h4 style="color:#f0b433; font-size:13px; margin-bottom:10px;">Nearby Marriott Properties (${alts.length} found)</h4>
+                                <div style="display:grid; gap:8px;">
+                                    ${alts.map(p => `
+                                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; background:rgba(0,0,0,0.02); border-radius:8px; border-left:3px solid ${p.can_accommodate ? '#4ade80' : '#f87171'};">
+                                            <div>
+                                                <strong style="color:#1e293b; font-size:12px;">${p.name}</strong>
+                                                <div style="color:#64748b; font-size:11px;">${p.brand} — ${p.location}</div>
+                                            </div>
+                                            <div style="text-align:right;">
+                                                <div style="color:${p.can_accommodate ? '#4ade80' : '#f87171'}; font-size:12px; font-weight:600;">${p.estimated_available} rooms avail</div>
+                                                <div style="color:#64748b; font-size:10px;">${p.total_rooms} total</div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+
                 resultDiv.innerHTML = `
                     <h3>AI Decision: ${decisionBadge}</h3>
-                    <p style="margin-top:12px;"><strong style="color:#e2e8f0;">Message:</strong> ${data.message_to_client || data.message || 'N/A'}</p>
-                    ${data.counter_proposal ? `<p style="margin-top:8px;"><strong style="color:#e2e8f0;">Counter Proposal:</strong> $${data.counter_proposal.room_rate}/night ${data.counter_proposal.includes_breakfast ? '+ Breakfast' : ''} ${data.counter_proposal.late_checkout ? '+ Late Checkout' : ''}</p>` : ''}
-                    <p style="margin-top:8px;"><strong style="color:#e2e8f0;">Turn:</strong> ${data.turn_number || '—'} | <strong style="color:#e2e8f0;">Status:</strong> ${data.status || '—'}</p>
+                    <p style="margin-top:12px;"><strong style="color:#1e293b;">Message:</strong> ${data.message_to_client || data.message || 'N/A'}</p>
+                    ${data.counter_proposal ? `<p style="margin-top:8px;"><strong style="color:#1e293b;">Counter Proposal:</strong> $${data.counter_proposal.room_rate}/night ${data.counter_proposal.includes_breakfast ? '+ Breakfast' : ''} ${data.counter_proposal.late_checkout ? '+ Late Checkout' : ''}</p>` : ''}
+                    <p style="margin-top:8px;"><strong style="color:#1e293b;">Turn:</strong> ${data.turn_number || '—'} | <strong style="color:#1e293b;">Status:</strong> ${data.status || '—'}</p>
+                    ${data.email_sent ? '<p style="margin-top:8px; color:#4ade80; font-size:12px;">✓ Email notification sent to guest</p>' : ''}
+                    ${availabilityHtml}
                 `;
                 showToast(`Negotiation: ${data.decision || data.status}`);
             } catch (e) {
@@ -478,7 +568,7 @@
                     }
                     resultDiv.innerHTML = `
                         <h3>${data.reminders_sent} Reminder(s) Sent for ${data.target_date}</h3>
-                        <p style="margin-top:8px;"><strong style="color:#e2e8f0;">Total Rooms:</strong> ${data.total_rooms || 0}</p>
+                        <p style="margin-top:8px;"><strong style="color:#1e293b;">Total Rooms:</strong> ${data.total_rooms || 0}</p>
                         <div style="margin-top:12px;">${detailsHtml}</div>
                         ${data.errors ? `<p style="margin-top:8px; color:#f87171;">Errors: ${data.errors.length}</p>` : ''}
                     `;
@@ -505,9 +595,9 @@
                 let riskFactorsHtml = '';
                 if (data.risk && data.risk.risk_factors && data.risk.risk_factors.length > 0) {
                     riskFactorsHtml = data.risk.risk_factors.map(f =>
-                        `<div style="margin:6px 0; padding:8px 12px; background:rgba(255,255,255,0.03); border-radius:8px; border-left:3px solid ${f.impact >= 30 ? '#f87171' : '#fbbf24'};">
-                            <strong style="color:#e2e8f0;">${f.factor}</strong> (impact: ${f.impact})
-                            <div style="color:#94a3b8; font-size:12px; margin-top:2px;">${f.detail}</div>
+                        `<div style="margin:6px 0; padding:8px 12px; background:rgba(0,0,0,0.02); border-radius:8px; border-left:3px solid ${f.impact >= 30 ? '#f87171' : '#fbbf24'};">
+                            <strong style="color:#1e293b;">${f.factor}</strong> (impact: ${f.impact})
+                            <div style="color:#64748b; font-size:12px; margin-top:2px;">${f.detail}</div>
                         </div>`
                     ).join('');
                 }
@@ -527,22 +617,22 @@
                         <span style="background:${statusColor}22; color:${statusColor}; padding:6px 14px; border-radius:20px; font-weight:600; font-size:12px;">${data.overall_compliance || 'UNKNOWN'}</span>
                     </div>
                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px;">
-                        <div style="text-align:center; padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Risk Level</div>
+                        <div style="text-align:center; padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b; text-transform:uppercase;">Risk Level</div>
                             <div style="font-size:18px; font-weight:700; color:${statusColor}; margin-top:4px;">${data.summary?.risk_level || '—'}</div>
                         </div>
-                        <div style="text-align:center; padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Risk Score</div>
-                            <div style="font-size:18px; font-weight:700; color:#e2e8f0; margin-top:4px;">${data.summary?.risk_score ?? '—'}/100</div>
+                        <div style="text-align:center; padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b; text-transform:uppercase;">Risk Score</div>
+                            <div style="font-size:18px; font-weight:700; color:#1e293b; margin-top:4px;">${data.summary?.risk_score ?? '—'}/100</div>
                         </div>
-                        <div style="text-align:center; padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Auto-Negotiate</div>
+                        <div style="text-align:center; padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b; text-transform:uppercase;">Auto-Negotiate</div>
                             <div style="font-size:18px; font-weight:700; color:${data.summary?.may_auto_negotiate ? '#4ade80' : '#f87171'}; margin-top:4px;">${data.summary?.may_auto_negotiate ? 'YES' : 'NO'}</div>
                         </div>
                     </div>
                     ${violationsHtml ? `<div style="margin-bottom:12px;"><strong style="color:#f87171;">Violations:</strong>${violationsHtml}</div>` : ''}
                     ${riskFactorsHtml ? `<div style="margin-bottom:12px;"><strong style="color:#fbbf24;">Risk Factors:</strong>${riskFactorsHtml}</div>` : ''}
-                    <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06); font-size:11px; color:#64748b;">
+                    <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(0,0,0,0.06); font-size:11px; color:#64748b;">
                         Engine: ${data.engine || 'TIP.AI v2.1'} | Audited: ${data.audited_at || '—'} | Standards: ISO 42001, EU AI Act, NIST AI RMF
                     </div>
                 `;
@@ -566,37 +656,37 @@
                         <span style="background:rgba(185,28,60,0.15); color:#e6394a; padding:6px 14px; border-radius:20px; font-weight:600; font-size:12px;">v2.1 ACTIVE</span>
                     </div>
                     <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:10px;">
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">Min Room Rate</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">$${rules.min_room_rate || 150}</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">Min Room Rate</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">$${rules.min_room_rate || 150}</div>
                         </div>
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">Max Discount</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">${rules.max_discount_pct || 25}%</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">Max Discount</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">${rules.max_discount_pct || 25}%</div>
                         </div>
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">Max Negotiation Rounds</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">${rules.max_negotiation_rounds || 5}</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">Max Negotiation Rounds</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">${rules.max_negotiation_rounds || 5}</div>
                         </div>
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">High-Value Threshold</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">$${(rules.high_value_threshold || 50000).toLocaleString()}</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">High-Value Threshold</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">$${(rules.high_value_threshold || 50000).toLocaleString()}</div>
                         </div>
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">Escalation Threshold</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">$${(rules.escalation_revenue_threshold || 100000).toLocaleString()}</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">Escalation Threshold</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">$${(rules.escalation_revenue_threshold || 100000).toLocaleString()}</div>
                         </div>
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">Max Rooms (Auto-Approve)</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">${rules.max_rooms_without_approval || 150}</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">Max Rooms (Auto-Approve)</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">${rules.max_rooms_without_approval || 150}</div>
                         </div>
-                        <div style="padding:12px; background:rgba(255,255,255,0.03); border-radius:10px;">
-                            <div style="font-size:11px; color:#94a3b8;">Required Lead Time</div>
-                            <div style="font-size:16px; font-weight:600; color:#e2e8f0;">${rules.required_lead_time_days || 14} days</div>
+                        <div style="padding:12px; background:rgba(0,0,0,0.02); border-radius:10px;">
+                            <div style="font-size:11px; color:#64748b;">Required Lead Time</div>
+                            <div style="font-size:16px; font-weight:600; color:#1e293b;">${rules.required_lead_time_days || 14} days</div>
                         </div>
                     </div>
-                    <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);">
-                        <strong style="color:#e2e8f0; font-size:12px;">Compliance Standards:</strong>
+                    <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(0,0,0,0.06);">
+                        <strong style="color:#1e293b; font-size:12px;">Compliance Standards:</strong>
                         <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
                             ${(data.governance_framework?.capabilities || []).map(c => `<span style="background:rgba(185,28,60,0.12); color:#e6394a; padding:4px 10px; border-radius:12px; font-size:11px;">${c}</span>`).join('')}
                         </div>
@@ -608,6 +698,257 @@
                 showToast('TIP.AI governance rules loaded');
             } catch (e) {
                 showToast('Error: ' + e.message);
+            }
+        }
+
+        function loadCities() {
+            const country = document.getElementById('p-country').value;
+            const citySelect = document.getElementById('p-city');
+            const cities = {
+                'India': [
+                    {code: 'HYD', name: 'Hyderabad'},
+                    {code: 'BLR', name: 'Bengaluru'},
+                    {code: 'BOM', name: 'Mumbai'},
+                    {code: 'DEL', name: 'New Delhi / NCR'},
+                    {code: 'MAA', name: 'Chennai'},
+                    {code: 'GOA', name: 'Goa'},
+                    {code: 'JAI', name: 'Jaipur'},
+                    {code: 'PNQ', name: 'Pune'},
+                    {code: 'CCU', name: 'Kolkata'},
+                ],
+                'USA': [
+                    {code: 'NYC', name: 'New York'},
+                    {code: 'LAX', name: 'Los Angeles'},
+                    {code: 'CHI', name: 'Chicago'},
+                    {code: 'MIA', name: 'Miami'},
+                ],
+            };
+            const list = cities[country] || [];
+            citySelect.innerHTML = list.map(c => `<option value="${c.code}">${c.name}</option>`).join('');
+        }
+
+        async function searchProperties() {
+            const city = document.getElementById('p-city').value;
+            const rooms = document.getElementById('p-rooms').value || 50;
+            const resultDiv = document.getElementById('properties-result');
+            resultDiv.innerHTML = '<p style="color:#64748b;">Searching nearby Marriott properties...</p>';
+
+            try {
+                const res = await fetch(API_BASE + '/properties/' + city + '?rooms=' + rooms);
+                const data = await res.json();
+
+                if (!data.properties || data.properties.length === 0) {
+                    resultDiv.innerHTML = '<div class="empty-state"><div class="icon">🏨</div><p>No properties found for this location.</p></div>';
+                    return;
+                }
+
+                const canAccommodate = data.properties.filter(p => p.can_accommodate).length;
+                const totalLux = data.properties.reduce((s,p) => s + (p.rooms?.luxury||0), 0);
+                const totalPrem = data.properties.reduce((s,p) => s + (p.rooms?.premium||0), 0);
+                const totalStd = data.properties.reduce((s,p) => s + (p.rooms?.standard||0), 0);
+
+                resultDiv.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h3 style="color:#1e293b; font-size:16px; margin:0;">Marriott Properties in ${data.city}, ${data.country}</h3>
+                            <p style="color:#64748b; font-size:12px; margin-top:4px;">${data.total_properties} properties | ${canAccommodate} can accommodate ${rooms} rooms</p>
+                        </div>
+                        <span style="background:rgba(240,180,51,0.15); color:#f0b433; padding:6px 14px; border-radius:20px; font-weight:600; font-size:11px; text-transform:uppercase;">${data.location_code}</span>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; padding:16px; background:rgba(0,0,0,0.04); border-radius:12px; border:1px solid rgba(0,0,0,0.06);">
+                        <div style="text-align:center;">
+                            <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:1px;">Luxury Rooms</div>
+                            <div style="font-size:24px; font-weight:800; color:#f0b433; margin-top:4px;">${totalLux}</div>
+                            <div style="font-size:10px; color:#64748b;">Suites, Presidential, Club</div>
+                        </div>
+                        <div style="text-align:center; border-left:1px solid rgba(0,0,0,0.06); border-right:1px solid rgba(0,0,0,0.06);">
+                            <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:1px;">Premium Rooms</div>
+                            <div style="font-size:24px; font-weight:800; color:#c084fc; margin-top:4px;">${totalPrem}</div>
+                            <div style="font-size:10px; color:#64748b;">Executive, Deluxe, King</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:1px;">Standard Rooms</div>
+                            <div style="font-size:24px; font-weight:800; color:#60a5fa; margin-top:4px;">${totalStd}</div>
+                            <div style="font-size:10px; color:#64748b;">Classic, Twin, Double</div>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; gap:12px;">
+                        ${data.properties.map(p => `
+                            <div style="padding:18px 20px; background:rgba(0,0,0,0.02); border-radius:12px; border-left:4px solid ${p.can_accommodate ? '#4ade80' : '#f87171'}; transition: background 0.15s;" onmouseenter="this.style.background='rgba(0,0,0,0.04)'" onmouseleave="this.style.background='rgba(0,0,0,0.02)'">
+                                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                    <div>
+                                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                            <strong style="color:#1e293b; font-size:14px;">${p.name}</strong>
+                                            <span style="background:rgba(185,28,60,0.12); color:#e6394a; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600;">${p.brand}</span>
+                                            ${p.can_accommodate
+                                                ? '<span style="background:rgba(74,222,128,0.12); color:#4ade80; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700;">CAN ACCOMMODATE</span>'
+                                                : '<span style="background:rgba(248,113,113,0.12); color:#f87171; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700;">INSUFFICIENT</span>'
+                                            }
+                                        </div>
+                                        <div style="color:#64748b; font-size:12px; margin-top:6px;">${p.address}</div>
+                                        <div style="color:#64748b; font-size:11px; margin-top:3px;">ID: ${p.property_id} | Coords: ${p.lat}, ${p.lng}</div>
+                                        <a href="${p.google_maps_url}" target="_blank" style="color:#60a5fa; font-size:11px; text-decoration:none; margin-top:4px; display:inline-block;">📍 Verify on Google Maps &rarr;</a>
+                                    </div>
+                                    <div style="text-align:right; min-width:90px;">
+                                        <div style="font-size:24px; font-weight:800; color:${p.can_accommodate ? '#4ade80' : '#f87171'};">${p.estimated_available}</div>
+                                        <div style="color:#64748b; font-size:10px;">available / ${p.total_rooms}</div>
+                                    </div>
+                                </div>
+
+                                <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid rgba(0,0,0,0.05);">
+                                    <div style="padding:8px; background:rgba(240,180,51,0.06); border-radius:8px; text-align:center;">
+                                        <div style="font-size:9px; color:#f0b433; text-transform:uppercase; letter-spacing:0.5px;">Luxury</div>
+                                        <div style="font-size:16px; font-weight:700; color:#f0b433;">${p.rooms?.luxury || 0}</div>
+                                        <div style="font-size:9px; color:#64748b;">${p.rooms_available?.luxury || 0} avail</div>
+                                    </div>
+                                    <div style="padding:8px; background:rgba(192,132,252,0.06); border-radius:8px; text-align:center;">
+                                        <div style="font-size:9px; color:#c084fc; text-transform:uppercase; letter-spacing:0.5px;">Premium</div>
+                                        <div style="font-size:16px; font-weight:700; color:#c084fc;">${p.rooms?.premium || 0}</div>
+                                        <div style="font-size:9px; color:#64748b;">${p.rooms_available?.premium || 0} avail</div>
+                                    </div>
+                                    <div style="padding:8px; background:rgba(96,165,250,0.06); border-radius:8px; text-align:center;">
+                                        <div style="font-size:9px; color:#60a5fa; text-transform:uppercase; letter-spacing:0.5px;">Standard</div>
+                                        <div style="font-size:16px; font-weight:700; color:#60a5fa;">${p.rooms?.standard || 0}</div>
+                                        <div style="font-size:9px; color:#64748b;">${p.rooms_available?.standard || 0} avail</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div style="margin-top:16px; padding:12px 16px; background:rgba(240,180,51,0.08); border-radius:10px; border:1px solid rgba(240,180,51,0.2);">
+                        <p style="color:#f0b433; font-size:12px; font-weight:600; margin-bottom:4px;">How to Book</p>
+                        <p style="color:#64748b; font-size:12px;">Copy the Property ID and use it in the "New Inquiry" tab. Click the Google Maps link to verify the address before booking.</p>
+                    </div>
+                `;
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error: ${e.message}</p></div>`;
+            }
+        }
+
+        async function loadReport() {
+            const period = document.getElementById('rpt-period').value;
+            const resultDiv = document.getElementById('report-result');
+            resultDiv.innerHTML = '<p style="color:#64748b;">Loading report...</p>';
+
+            try {
+                const res = await fetch(API_BASE + '/bookings/report?period=' + period);
+                const data = await res.json();
+
+                if (data.total_bookings === 0) {
+                    resultDiv.innerHTML = `
+                        <div class="empty-state"><div class="icon">📊</div>
+                        <p>No bookings found for this period. Submit inquiries first.</p></div>`;
+                    return;
+                }
+
+                const periodLabel = {week:'This Week',month:'This Month',year:'This Year',all:'All Time'}[period] || period;
+
+                const statusHtml = Object.entries(data.status_breakdown || {}).map(([s, c]) =>
+                    `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.06);">
+                        <span>${getStatusBadge(s)}</span><span style="color:#1e293b; font-weight:600;">${c}</span>
+                    </div>`
+                ).join('');
+
+                const eventHtml = Object.entries(data.event_type_breakdown || {}).map(([e, c]) =>
+                    `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.06);">
+                        <span style="color:#64748b; text-transform:capitalize;">${e}</span><span style="color:#1e293b; font-weight:600;">${c}</span>
+                    </div>`
+                ).join('');
+
+                const monthlyHtml = Object.entries(data.monthly_breakdown || {}).map(([m, d]) =>
+                    `<div style="display:flex; justify-content:space-between; padding:8px 12px; background:rgba(0,0,0,0.04); border-radius:8px; margin-bottom:4px;">
+                        <span style="color:#64748b; font-size:12px;">${m}</span>
+                        <div>
+                            <span style="color:#f0b433; font-weight:600; font-size:12px;">${d.count} bookings</span>
+                            <span style="color:#64748b; font-size:11px; margin-left:10px;">$${d.revenue.toLocaleString()}</span>
+                        </div>
+                    </div>`
+                ).join('');
+
+                const bookingsTableHtml = (data.bookings || []).slice(0, 20).map(b =>
+                    `<tr>
+                        <td><strong>${b.booking_id}</strong></td>
+                        <td>${b.contact_name || '—'}</td>
+                        <td>${b.event_type || '—'}</td>
+                        <td>${b.event_date || '—'}</td>
+                        <td>${b.num_rooms || 0}</td>
+                        <td>$${parseFloat(b.estimated_revenue || 0).toLocaleString()}</td>
+                        <td>${getStatusBadge(b.status)}</td>
+                        <td style="font-size:11px; color:#64748b;">${(b.created_at || '').slice(0, 10)}</td>
+                    </tr>`
+                ).join('');
+
+                resultDiv.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                        <h3 style="color:#1e293b; margin:0;">${periodLabel} Report</h3>
+                        <span style="color:#64748b; font-size:12px;">${data.start_date} to ${data.end_date}</span>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px;">
+                        <div style="text-align:center; padding:16px; background:rgba(240,180,51,0.06); border-radius:12px; border:1px solid rgba(240,180,51,0.15);">
+                            <div style="font-size:10px; color:#f0b433; text-transform:uppercase; letter-spacing:1px;">Total Bookings</div>
+                            <div style="font-size:28px; font-weight:800; color:#f0b433; margin-top:6px;">${data.total_bookings}</div>
+                        </div>
+                        <div style="text-align:center; padding:16px; background:rgba(74,222,128,0.06); border-radius:12px; border:1px solid rgba(74,222,128,0.15);">
+                            <div style="font-size:10px; color:#4ade80; text-transform:uppercase; letter-spacing:1px;">Total Revenue</div>
+                            <div style="font-size:28px; font-weight:800; color:#4ade80; margin-top:6px;">$${data.total_revenue.toLocaleString()}</div>
+                        </div>
+                        <div style="text-align:center; padding:16px; background:rgba(192,132,252,0.06); border-radius:12px; border:1px solid rgba(192,132,252,0.15);">
+                            <div style="font-size:10px; color:#c084fc; text-transform:uppercase; letter-spacing:1px;">Avg Revenue</div>
+                            <div style="font-size:28px; font-weight:800; color:#c084fc; margin-top:6px;">$${data.avg_revenue_per_booking.toLocaleString()}</div>
+                        </div>
+                        <div style="text-align:center; padding:16px; background:rgba(96,165,250,0.06); border-radius:12px; border:1px solid rgba(96,165,250,0.15);">
+                            <div style="font-size:10px; color:#60a5fa; text-transform:uppercase; letter-spacing:1px;">Total Room-Nights</div>
+                            <div style="font-size:28px; font-weight:800; color:#60a5fa; margin-top:6px;">${data.total_rooms_booked}</div>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:24px;">
+                        <div style="text-align:center; padding:12px; background:rgba(0,0,0,0.04); border-radius:10px;">
+                            <div style="font-size:10px; color:#64748b;">Avg Rooms/Booking</div>
+                            <div style="font-size:20px; font-weight:700; color:#1e293b; margin-top:4px;">${data.avg_rooms_per_booking}</div>
+                        </div>
+                        <div style="text-align:center; padding:12px; background:rgba(0,0,0,0.04); border-radius:10px;">
+                            <div style="font-size:10px; color:#64748b;">Avg Nights/Booking</div>
+                            <div style="font-size:20px; font-weight:700; color:#1e293b; margin-top:4px;">${data.avg_nights_per_booking}</div>
+                        </div>
+                        <div style="text-align:center; padding:12px; background:rgba(0,0,0,0.04); border-radius:10px;">
+                            <div style="font-size:10px; color:#64748b;">Backup Status</div>
+                            <div style="font-size:12px; font-weight:600; color:#4ade80; margin-top:6px;">PERSISTENT</div>
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
+                        <div style="padding:16px; background:rgba(0,0,0,0.04); border-radius:12px;">
+                            <h4 style="color:#1e293b; font-size:13px; margin-bottom:10px;">Status Breakdown</h4>
+                            ${statusHtml || '<p style="color:#64748b; font-size:12px;">No data</p>'}
+                        </div>
+                        <div style="padding:16px; background:rgba(0,0,0,0.04); border-radius:12px;">
+                            <h4 style="color:#1e293b; font-size:13px; margin-bottom:10px;">Event Types</h4>
+                            ${eventHtml || '<p style="color:#64748b; font-size:12px;">No data</p>'}
+                        </div>
+                    </div>
+
+                    ${monthlyHtml ? `
+                    <div style="padding:16px; background:rgba(0,0,0,0.04); border-radius:12px; margin-bottom:24px;">
+                        <h4 style="color:#1e293b; font-size:13px; margin-bottom:12px;">Monthly Breakdown</h4>
+                        ${monthlyHtml}
+                    </div>` : ''}
+
+                    <div style="padding:16px; background:rgba(0,0,0,0.04); border-radius:12px;">
+                        <h4 style="color:#1e293b; font-size:13px; margin-bottom:12px;">Booking Details (${Math.min(data.bookings.length, 20)} of ${data.total_bookings})</h4>
+                        <table>
+                            <thead><tr>
+                                <th>ID</th><th>Contact</th><th>Event</th><th>Date</th><th>Rooms</th><th>Revenue</th><th>Status</th><th>Created</th>
+                            </tr></thead>
+                            <tbody>${bookingsTableHtml}</tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error: ${e.message}</p></div>`;
             }
         }
 

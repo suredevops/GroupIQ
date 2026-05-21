@@ -135,7 +135,12 @@ for FUNC in intake proposal_generator negotiation_agent notification reminder ti
     rm -rf /tmp/groupiq-$FUNC && mkdir -p /tmp/groupiq-$FUNC
     cp handler.py /tmp/groupiq-$FUNC/
     cp "$PROJECT_ROOT/lambdas/common/utils.py" /tmp/groupiq-$FUNC/
+    chmod 644 /tmp/groupiq-$FUNC/*.py
     cd /tmp/groupiq-$FUNC && zip -r /tmp/groupiq-$FUNC.zip . > /dev/null
+
+    # Delete existing function first to avoid Pending state conflicts
+    aws --endpoint-url=$LOCALSTACK_URL lambda delete-function \
+        --function-name groupiq-$FUNC-$ENVIRONMENT > /dev/null 2>&1 || true
 
     aws --endpoint-url=$LOCALSTACK_URL lambda create-function \
         --function-name groupiq-$FUNC-$ENVIRONMENT \
@@ -145,10 +150,7 @@ for FUNC in intake proposal_generator negotiation_agent notification reminder ti
         --zip-file fileb:///tmp/groupiq-$FUNC.zip \
         --environment "Variables={BOOKINGS_TABLE=groupiq-bookings-$ENVIRONMENT,PRICING_TABLE=groupiq-pricing-rules-$ENVIRONMENT,NEGOTIATIONS_TABLE=groupiq-negotiations-$ENVIRONMENT,PROPOSALS_BUCKET=groupiq-proposals-$ENVIRONMENT,BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0,MAX_DISCOUNT_PERCENT=15,ESCALATION_TOPIC_ARN=$TOPIC_ARN,SES_SENDER_EMAIL=test@groupiq.local,REMINDER_DAYS_BEFORE=2,ENVIRONMENT=$ENVIRONMENT}" \
         --timeout 120 \
-        2>/dev/null || \
-    aws --endpoint-url=$LOCALSTACK_URL lambda update-function-code \
-        --function-name groupiq-$FUNC-$ENVIRONMENT \
-        --zip-file fileb:///tmp/groupiq-$FUNC.zip > /dev/null
+        > /dev/null
 done
 echo "    All Lambda functions deployed."
 

@@ -25,6 +25,18 @@ def get_s3_client():
 
 
 def get_ses_client():
+    """Get SES client — uses real AWS SES if credentials are configured, otherwise LocalStack."""
+    ses_access_key = os.environ.get("SES_AWS_ACCESS_KEY_ID")
+    ses_secret_key = os.environ.get("SES_AWS_SECRET_ACCESS_KEY")
+    ses_region = os.environ.get("SES_AWS_REGION", "us-east-1")
+
+    if ses_access_key and ses_secret_key:
+        return boto3.client(
+            "ses",
+            region_name=ses_region,
+            aws_access_key_id=ses_access_key,
+            aws_secret_access_key=ses_secret_key,
+        )
     return boto3.client("ses")
 
 
