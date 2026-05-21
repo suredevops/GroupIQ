@@ -1,7 +1,0 @@
-aws_region           = "us-east-2"
-environment          = "prod"
-bedrock_model_id     = "anthropic.claude-3-sonnet-20240229-v1:0"
-max_discount_percent = 15
-escalation_email     = "group-sales@marriott-groupiq.example.com"
-ses_sender_email     = "proposals@marriott-groupiq.example.com"
-proposal_expiry_days = 7
