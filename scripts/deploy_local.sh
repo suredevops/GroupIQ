@@ -62,7 +62,26 @@ aws --endpoint-url=$LOCALSTACK_URL dynamodb create-table \
     --billing-mode PAY_PER_REQUEST \
     2>/dev/null || echo "    (pricing-rules table already exists)"
 
-echo "    DynamoDB tables created."
+# Inventory table — tracks room availability with atomic counters
+aws --endpoint-url=$LOCALSTACK_URL dynamodb create-table \
+    --table-name groupiq-inventory-$ENVIRONMENT \
+    --key-schema AttributeName=property_id,KeyType=HASH AttributeName=date,KeyType=RANGE \
+    --attribute-definitions \
+        AttributeName=property_id,AttributeType=S \
+        AttributeName=date,AttributeType=S \
+    --billing-mode PAY_PER_REQUEST \
+    2>/dev/null || echo "    (inventory table already exists)"
+
+# Booking queue table — priority queue for large concurrent bookings
+aws --endpoint-url=$LOCALSTACK_URL dynamodb create-table \
+    --table-name groupiq-booking-queue-$ENVIRONMENT \
+    --key-schema AttributeName=booking_id,KeyType=HASH \
+    --attribute-definitions \
+        AttributeName=booking_id,AttributeType=S \
+    --billing-mode PAY_PER_REQUEST \
+    2>/dev/null || echo "    (booking-queue table already exists)"
+
+echo "    DynamoDB tables created (including inventory & queue)."
 
 # 2. Create S3 bucket
 echo ""
@@ -135,6 +154,9 @@ for FUNC in intake proposal_generator negotiation_agent notification reminder ti
     rm -rf /tmp/groupiq-$FUNC && mkdir -p /tmp/groupiq-$FUNC
     cp handler.py /tmp/groupiq-$FUNC/
     cp "$PROJECT_ROOT/lambdas/common/utils.py" /tmp/groupiq-$FUNC/
+    cp "$PROJECT_ROOT/lambdas/common/pricing_engine.py" /tmp/groupiq-$FUNC/
+    cp "$PROJECT_ROOT/lambdas/common/calendar_data.py" /tmp/groupiq-$FUNC/
+    cp "$PROJECT_ROOT/lambdas/common/market_data.py" /tmp/groupiq-$FUNC/
     chmod 644 /tmp/groupiq-$FUNC/*.py
     cd /tmp/groupiq-$FUNC && zip -r /tmp/groupiq-$FUNC.zip . > /dev/null
 
@@ -148,7 +170,7 @@ for FUNC in intake proposal_generator negotiation_agent notification reminder ti
         --handler handler.lambda_handler \
         --role arn:aws:iam::000000000000:role/groupiq-lambda \
         --zip-file fileb:///tmp/groupiq-$FUNC.zip \
-        --environment "Variables={BOOKINGS_TABLE=groupiq-bookings-$ENVIRONMENT,PRICING_TABLE=groupiq-pricing-rules-$ENVIRONMENT,NEGOTIATIONS_TABLE=groupiq-negotiations-$ENVIRONMENT,PROPOSALS_BUCKET=groupiq-proposals-$ENVIRONMENT,BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0,MAX_DISCOUNT_PERCENT=15,ESCALATION_TOPIC_ARN=$TOPIC_ARN,SES_SENDER_EMAIL=test@groupiq.local,REMINDER_DAYS_BEFORE=2,ENVIRONMENT=$ENVIRONMENT}" \
+        --environment "Variables={BOOKINGS_TABLE=groupiq-bookings-$ENVIRONMENT,PRICING_TABLE=groupiq-pricing-rules-$ENVIRONMENT,NEGOTIATIONS_TABLE=groupiq-negotiations-$ENVIRONMENT,PROPOSALS_BUCKET=groupiq-proposals-$ENVIRONMENT,INVENTORY_TABLE=groupiq-inventory-$ENVIRONMENT,BOOKING_QUEUE_TABLE=groupiq-booking-queue-$ENVIRONMENT,LARGE_BOOKING_THRESHOLD=100,BEDROCK_MODEL_ID=anthropic.claude-3-sonnet-20240229-v1:0,MAX_DISCOUNT_PERCENT=15,ESCALATION_TOPIC_ARN=$TOPIC_ARN,SES_SENDER_EMAIL=test@groupiq.local,REMINDER_DAYS_BEFORE=2,ENVIRONMENT=$ENVIRONMENT}" \
         --timeout 120 \
         > /dev/null
 done

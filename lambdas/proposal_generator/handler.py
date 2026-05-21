@@ -30,34 +30,38 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 
 
 PROPOSAL_SYSTEM_PROMPT = """You are GroupIQ, an expert hotel group sales AI for Marriott International.
-Your job is to generate compelling, customized group booking proposals.
+Your job is to generate compelling, customized group booking proposals with transparent dynamic pricing.
 
-Given the booking details and property pricing rules, create a detailed proposal that includes:
+Given the booking details, dynamic pricing breakdown, and property pricing rules, create a detailed proposal that includes:
 1. Executive Summary — personalized greeting and event acknowledgment
-2. Room Block — tiered pricing based on commitment level (e.g., 80% pickup = best rate)
-3. F&B Packages — 2-3 options ranging from basic to premium
-4. Meeting Space — if requested, include AV and setup options
-5. Value-Adds — complimentary upgrades, welcome amenities, loyalty points
-6. Terms — cutoff dates, attrition policy, cancellation terms
-7. Total Estimated Investment — breakdown by category
+2. Pricing Rationale — explain WHY this rate was calculated (reference specific factors)
+3. Room Block — tiered pricing based on commitment level (e.g., 80% pickup = best rate)
+4. F&B Packages — 2-3 options ranging from basic to premium
+5. Meeting Space — if requested, include AV and setup options
+6. Value-Adds — complimentary upgrades, welcome amenities, loyalty points
+7. Terms — cutoff dates, attrition policy, cancellation terms
+8. Total Estimated Investment — breakdown by category
 
 Rules:
 - Never exceed the max_discount from pricing rules
 - Always offer at least 2 tier options (Good/Better/Best)
 - Include urgency (proposal valid for 7 days)
 - Personalize based on event_type (wedding vs conference vs corporate)
+- Reference the dynamic pricing factors (seasonality, occupancy, etc.) to justify the rate
+- Show the customer their savings vs. rack rate
 - Calculate RevPAR impact and ensure profitability
 
 Output MUST be valid JSON with the following structure:
 {
   "executive_summary": "string",
+  "pricing_rationale": "string explaining why this rate",
   "room_block": { "tiers": [...] },
   "fnb_packages": [...],
   "meeting_space": {...} or null,
   "value_adds": [...],
   "terms": {...},
   "total_investment": { "min": number, "max": number, "recommended": number }
-}"""
+}""""""
 
 
 def get_booking(booking_id: str) -> dict:
@@ -76,6 +80,27 @@ def invoke_bedrock(booking: dict, pricing_rules: dict) -> dict:
     """Call Bedrock Claude to generate the proposal."""
     client = get_bedrock_client()
 
+    # Build pricing breakdown section
+    pricing_breakdown = booking.get("pricing_breakdown", "[]")
+    if isinstance(pricing_breakdown, str):
+        try:
+            pricing_breakdown = json.loads(pricing_breakdown)
+        except (json.JSONDecodeError, TypeError):
+            pricing_breakdown = []
+
+    pricing_section = ""
+    if pricing_breakdown:
+        pricing_section = "\n\nDynamic Pricing Breakdown (explain these factors to the customer):\n"
+        for factor in pricing_breakdown:
+            pricing_section += f"  • {factor.get('factor', 'Unknown')}: {factor.get('impact', '0%')} — {factor.get('description', '')}\n"
+        pricing_section += f"\nBase Rate: ${booking.get('base_room_rate', 250)}/night"
+        pricing_section += f"\nDynamic Rate: ${booking.get('dynamic_room_rate', booking.get('base_room_rate', 250))}/night"
+        pricing_section += f"\nMultiplier Applied: ×{booking.get('pricing_multiplier', 1.0)}"
+
+    pricing_explanation = booking.get("pricing_explanation", "")
+    if pricing_explanation:
+        pricing_section += f"\n\nPricing Logic:\n{pricing_explanation}"
+
     user_message = f"""Generate a group booking proposal for the following inquiry:
 
 Event Type: {booking['event_type']}
@@ -90,8 +115,7 @@ Budget Indication: {booking.get('budget_indication', 'Not specified')}
 
 Property Pricing Rules:
 {json.dumps(pricing_rules, cls=DecimalEncoder, indent=2)}
-
-Base Room Rate: ${booking['base_room_rate']}/night
+{pricing_section}
 """
 
     request_body = json.dumps({

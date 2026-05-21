@@ -19,7 +19,10 @@ from utils import (
     get_dynamodb_resource,
     BookingStatus,
     DecimalEncoder,
+    InventoryManager,
+    BookingQueue,
 )
+from pricing_engine import calculate_dynamic_rate
 
 BOOKINGS_TABLE = os.environ["BOOKINGS_TABLE"]
 PRICING_TABLE = os.environ["PRICING_TABLE"]
@@ -115,10 +118,24 @@ def handle_new_inquiry(event):
     pricing_rules = get_base_pricing(body["property_id"])
 
     base_room_rate = float(pricing_rules.get("room_rate", {}).get("base_rate", 250))
+    floor_rate = float(pricing_rules.get("room_rate", {}).get("floor_rate", 200))
+    peak_rate = float(pricing_rules.get("room_rate", {}).get("peak_rate", 450))
     num_rooms = int(body["num_rooms"])
     num_nights = int(body["num_nights"])
 
-    estimated_revenue = base_room_rate * num_rooms * num_nights
+    # Dynamic pricing calculation
+    dynamic_pricing = calculate_dynamic_rate(
+        base_rate=base_room_rate,
+        floor_rate=floor_rate,
+        peak_rate=peak_rate,
+        event_date=body["event_date"],
+        property_id=body["property_id"],
+        num_rooms=num_rooms,
+        num_nights=num_nights,
+    )
+
+    dynamic_rate = dynamic_pricing["final_rate"]
+    estimated_revenue = dynamic_pricing["revenue_summary"]["total_revenue"]
 
     booking_record = {
         "booking_id": booking_id,
@@ -140,6 +157,10 @@ def handle_new_inquiry(event):
         "budget_indication": body.get("budget_indication", ""),
         "estimated_revenue": Decimal(str(estimated_revenue)),
         "base_room_rate": Decimal(str(base_room_rate)),
+        "dynamic_room_rate": Decimal(str(dynamic_rate)),
+        "pricing_multiplier": Decimal(str(dynamic_pricing["combined_multiplier"])),
+        "pricing_breakdown": json.dumps(dynamic_pricing["breakdown"]),
+        "pricing_explanation": dynamic_pricing["pricing_explanation"],
         "pricing_rules": json.dumps(pricing_rules, cls=DecimalEncoder),
         "created_at": utc_now_iso(),
         "updated_at": utc_now_iso(),
@@ -147,6 +168,46 @@ def handle_new_inquiry(event):
 
     dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(BOOKINGS_TABLE)
+
+    # ─── Concurrency: Check inventory BEFORE creating the booking ─────────────
+    inventory = InventoryManager()
+    queue = BookingQueue()
+    hold_result = None
+    queue_result = None
+
+    # Check available rooms first
+    available = inventory.get_available_rooms(body["property_id"], body["event_date"])
+    if available < num_rooms:
+        return build_response(409, {
+            "error": "INSUFFICIENT_INVENTORY",
+            "message": f"Cannot book {num_rooms} rooms — only {available} rooms available for {body['event_date']} at property {body['property_id']}",
+            "available_rooms": available,
+            "requested_rooms": num_rooms,
+            "property_id": body["property_id"],
+            "event_date": body["event_date"],
+            "suggestion": "Try a different date, reduce room count, or check nearby properties at GET /properties",
+        })
+
+    # Place a soft hold on rooms atomically (prevents race conditions)
+    hold_result = inventory.hold_rooms(body["property_id"], body["event_date"], num_rooms)
+
+    if not hold_result.get("success"):
+        # Another concurrent request grabbed the rooms between our check and hold
+        return build_response(409, {
+            "error": "CONCURRENT_CONFLICT",
+            "message": f"Rooms were booked by another request while processing. Only {inventory.get_available_rooms(body['property_id'], body['event_date'])} rooms remain.",
+            "available_rooms": inventory.get_available_rooms(body["property_id"], body["event_date"]),
+            "requested_rooms": num_rooms,
+            "suggestion": "Retry with fewer rooms or try a different date",
+        })
+
+    # Rooms held successfully — now create the booking
+    if queue.is_large_booking(num_rooms):
+        queue_result = queue.enqueue(booking_id, num_rooms, body["property_id"], body["event_date"])
+        booking_record["status"] = BookingStatus.QUEUED
+        booking_record["queue_info"] = json.dumps(queue_result)
+
+    booking_record["rooms_held"] = num_rooms
     table.put_item(Item=booking_record)
 
     # TIP.AI Governance — mandatory compliance check before workflow proceeds
@@ -169,9 +230,23 @@ def handle_new_inquiry(event):
         "message": "Group booking inquiry received",
         "booking_id": booking_id,
         "estimated_revenue": estimated_revenue,
-        "status": BookingStatus.INQUIRY_RECEIVED,
+        "status": booking_record["status"],
         "tipai_compliance": tipai_result.get("overall_compliance", "PENDING"),
         "tipai_risk_level": tipai_result.get("summary", {}).get("risk_level", "UNKNOWN"),
+        "dynamic_pricing": {
+            "base_rate": base_room_rate,
+            "final_rate": dynamic_rate,
+            "multiplier": dynamic_pricing["combined_multiplier"],
+            "breakdown": dynamic_pricing["breakdown"],
+            "market_data": dynamic_pricing["market_data"],
+            "revenue_summary": dynamic_pricing["revenue_summary"],
+            "explanation": dynamic_pricing["pricing_explanation"],
+        },
+        "concurrency": {
+            "rooms_held": hold_result.get("held", 0) if hold_result else 0,
+            "is_large_booking": queue.is_large_booking(num_rooms),
+            "queued": queue_result.get("queued", False) if queue_result else False,
+        },
     })
 
 

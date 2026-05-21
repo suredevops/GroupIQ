@@ -22,6 +22,8 @@ from utils import (
     get_sns_client,
     get_ses_client,
     BookingStatus,
+    InventoryManager,
+    BookingQueue,
     DecimalEncoder,
 )
 
@@ -575,15 +577,55 @@ def lambda_handler(event, context):
         "ESCALATE": BookingStatus.ESCALATED,
     }.get(negotiation_result["decision"], BookingStatus.NEGOTIATING)
 
-    table.update_item(
-        Key={"booking_id": booking_id, "version": int(booking["version"])},
-        UpdateExpression="SET #s = :status, updated_at = :ts",
-        ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={
-            ":status": new_status,
-            ":ts": utc_now_iso(),
-        },
-    )
+    # ─── Concurrency Control for ACCEPT ───────────────────────────────────────
+    inventory_result = None
+    queue_result = None
+    num_rooms = int(booking.get("num_rooms", 0))
+    property_id = booking.get("property_id", "")
+    event_date = booking.get("event_date", "")
+
+    if negotiation_result["decision"] == "ACCEPT":
+        inventory = InventoryManager()
+        queue = BookingQueue()
+
+        # Large bookings (100+ rooms) go through priority queue
+        if queue.is_large_booking(num_rooms):
+            queue_result = queue.enqueue(booking_id, num_rooms, property_id, event_date, priority=1)
+
+        # Atomic room reservation — prevents double-booking
+        inventory_result = inventory.reserve_rooms(property_id, event_date, num_rooms, booking_id)
+
+        if not inventory_result.get("success"):
+            # Insufficient inventory — cannot accept, escalate instead
+            negotiation_result["decision"] = "ESCALATE"
+            negotiation_result["message_to_client"] = (
+                f"We apologize — while processing your booking for {num_rooms} rooms, "
+                f"availability changed. Only {inventory_result.get('available', 0)} rooms remain. "
+                f"Your request has been escalated to our sales team for priority handling."
+            )
+            new_status = BookingStatus.ESCALATED
+
+    # Optimistic locking — conditional write to prevent concurrent status conflicts
+    try:
+        table.update_item(
+            Key={"booking_id": booking_id, "version": int(booking["version"])},
+            UpdateExpression="SET #s = :status, updated_at = :ts",
+            ConditionExpression="#s <> :accepted_status",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":status": new_status,
+                ":ts": utc_now_iso(),
+                ":accepted_status": BookingStatus.ACCEPTED,
+            },
+        )
+    except Exception:
+        # Another request already accepted this booking
+        if negotiation_result["decision"] == "ACCEPT":
+            return build_response(409, {
+                "booking_id": booking_id,
+                "error": "CONFLICT",
+                "message": "This booking was already accepted by another concurrent request.",
+            })
 
     if negotiation_result["decision"] == "ESCALATE":
         escalate_to_sales(booking, negotiation_result)
@@ -613,6 +655,12 @@ def lambda_handler(event, context):
         "status": new_status,
         "email_sent": email_sent,
         "property_availability": availability,
+        "concurrency": {
+            "inventory_reserved": inventory_result.get("success") if inventory_result else None,
+            "rooms_available_after": inventory_result.get("available_after") if inventory_result else None,
+            "queued_for_processing": queue_result is not None,
+            "queue_info": queue_result,
+        },
     }
 
     if "body" in event:
