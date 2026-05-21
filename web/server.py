@@ -626,7 +626,32 @@ class ReusableHTTPServer(http.server.HTTPServer):
     allow_reuse_address = True
 
 
+def kill_port(port):
+    """Kill any process occupying the given port (macOS/Linux)."""
+    import subprocess
+    import signal
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True, text=True, timeout=5
+        )
+        pids = result.stdout.strip().split("\n")
+        for pid in pids:
+            if pid.strip():
+                try:
+                    os.kill(int(pid.strip()), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, ValueError):
+                    pass
+        if any(p.strip() for p in pids):
+            import time
+            time.sleep(0.5)
+            print(f"[GroupIQ] Cleared port {port} (killed stale process)")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+
 def main():
+    kill_port(PORT)
     server = ReusableHTTPServer(("0.0.0.0", PORT), GroupIQHandler)
     print(f"""
 ╔══════════════════════════════════════════════════════╗

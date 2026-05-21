@@ -12,9 +12,8 @@
 
         .header { background: white; padding: 16px 40px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-bottom: 1px solid #e2e8f0; }
         .header-left { display: flex; align-items: center; gap: 14px; }
-        .header-logo { height: 32px; }
-        .header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #1e293b; }
-        .header .subtitle { font-size: 11px; margin-top: 1px; color: #64748b; font-weight: 400; }
+        .header-logo { height: 28px; }
+        .header .subtitle { font-size: 12px; color: #64748b; font-weight: 400; }
         .header .status { display: flex; align-items: center; gap: 8px; background: #f0fdf4; padding: 7px 14px; border-radius: 20px; font-size: 12px; color: #166534; border: 1px solid #bbf7d0; }
         .header .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px #22c55e; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { box-shadow: 0 0 6px #22c55e; } 50% { box-shadow: 0 0 14px #22c55e; } }
@@ -97,15 +96,24 @@
 <body>
     <div class="header">
         <div class="header-left">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4a/Marriott_International.svg/2560px-Marriott_International.svg.png" alt="Marriott" class="header-logo">
-            <div>
-                <h1>GroupIQ</h1>
-                <div class="subtitle">AI-Powered Group Booking Platform</div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span style="font-size:20px; font-weight:800; color:#1e293b; letter-spacing:-0.5px;">Marriott</span>
+                <span style="color:#e2e8f0; font-size:22px; font-weight:300;">|</span>
+                <span style="font-size:20px; font-weight:800; color:#dc2626; letter-spacing:-0.5px;">GroupIQ</span>
             </div>
+            <span style="font-size:12px; color:#64748b; margin-left:4px;">AI-Powered Group Booking Platform</span>
         </div>
         <div class="status">
             <span class="status-dot"></span>
             <span>System Online</span>
+        </div>
+    </div>
+
+    <!-- Booking Detail Modal -->
+    <div id="booking-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); backdrop-filter:blur(4px); z-index:200; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; max-width:640px; width:90%; max-height:80vh; overflow-y:auto; box-shadow:0 25px 60px rgba(0,0,0,0.15); padding:32px; position:relative;">
+            <button onclick="closeBookingModal()" style="position:absolute; top:16px; right:16px; background:#f1f5f9; border:none; border-radius:8px; width:32px; height:32px; cursor:pointer; font-size:18px; color:#64748b; display:flex; align-items:center; justify-content:center;">×</button>
+            <div id="booking-modal-content"></div>
         </div>
     </div>
 
@@ -360,6 +368,7 @@
 
     <script>
         const API_BASE = '';
+        let allBookingsData = [];
 
         function showToast(msg) {
             const t = document.getElementById('toast');
@@ -367,6 +376,113 @@
             t.classList.add('show');
             setTimeout(() => t.classList.remove('show'), 4000);
         }
+
+        function showBookingDetail(bookingId) {
+            const booking = allBookingsData.find(b => b.booking_id === bookingId);
+            if (!booking) { showToast('Booking not found'); return; }
+
+            const modal = document.getElementById('booking-modal');
+            const content = document.getElementById('booking-modal-content');
+            const checkout = getCheckoutDate(booking.event_date, booking.num_nights);
+
+            content.innerHTML = `
+                <div style="margin-bottom:20px;">
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+                        <h2 style="font-size:20px; font-weight:700; color:#1e293b; margin:0;">Booking Details</h2>
+                        ${getStatusBadge(booking.status)}
+                    </div>
+                    <p style="color:#64748b; font-size:13px;">${booking.booking_id}</p>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
+                    <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:6px;">Contact Name</div>
+                        <div style="font-size:15px; color:#1e293b; font-weight:600;">${booking.contact_name || '—'}</div>
+                    </div>
+                    <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:6px;">Email Address</div>
+                        <div style="font-size:14px; color:#1e293b; font-weight:500;">${booking.contact_email || '—'}</div>
+                    </div>
+                    <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:6px;">Company</div>
+                        <div style="font-size:15px; color:#1e293b; font-weight:600;">${booking.company_name || 'Individual'}</div>
+                    </div>
+                    <div style="padding:16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;">
+                        <div style="font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:6px;">Event Type</div>
+                        <div style="font-size:15px; color:#1e293b; font-weight:600; text-transform:capitalize;">${booking.event_type || '—'}</div>
+                    </div>
+                </div>
+
+                <div style="background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0; padding:20px; margin-bottom:20px;">
+                    <h3 style="font-size:13px; color:#64748b; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:14px; font-weight:600;">Booking Summary</h3>
+                    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px;">
+                        <div style="text-align:center;">
+                            <div style="font-size:22px; font-weight:800; color:#dc2626;">${booking.num_rooms || 0}</div>
+                            <div style="font-size:11px; color:#64748b;">Rooms</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:22px; font-weight:800; color:#1e293b;">${booking.num_nights || 0}</div>
+                            <div style="font-size:11px; color:#64748b;">Nights</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:22px; font-weight:800; color:#059669;">$${parseFloat(booking.estimated_revenue || 0).toLocaleString()}</div>
+                            <div style="font-size:11px; color:#64748b;">Revenue</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:22px; font-weight:800; color:#7c3aed;">${booking.property_id || '—'}</div>
+                            <div style="font-size:11px; color:#64748b;">Property</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px;">
+                    <div style="padding:14px 16px; background:#fef2f2; border-radius:10px; border:1px solid #fecaca;">
+                        <div style="font-size:10px; color:#991b1b; text-transform:uppercase; letter-spacing:0.8px; font-weight:600;">Check-In</div>
+                        <div style="font-size:15px; color:#1e293b; font-weight:600; margin-top:4px;">${booking.event_date || '—'}</div>
+                    </div>
+                    <div style="padding:14px 16px; background:#eff6ff; border-radius:10px; border:1px solid #bfdbfe;">
+                        <div style="font-size:10px; color:#1e40af; text-transform:uppercase; letter-spacing:0.8px; font-weight:600;">Check-Out</div>
+                        <div style="font-size:15px; color:#1e293b; font-weight:600; margin-top:4px;">${checkout}</div>
+                    </div>
+                </div>
+
+                ${booking.special_requests ? `
+                <div style="padding:14px 16px; background:#fefce8; border-radius:10px; border:1px solid #fde68a; margin-bottom:20px;">
+                    <div style="font-size:10px; color:#92400e; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:4px;">Special Requests</div>
+                    <div style="font-size:13px; color:#1e293b;">${booking.special_requests}</div>
+                </div>` : ''}
+
+                ${booking.budget_indication ? `
+                <div style="padding:14px 16px; background:#f0fdf4; border-radius:10px; border:1px solid #bbf7d0; margin-bottom:20px;">
+                    <div style="font-size:10px; color:#166534; text-transform:uppercase; letter-spacing:0.8px; font-weight:600; margin-bottom:4px;">Budget Indication</div>
+                    <div style="font-size:13px; color:#1e293b; font-weight:600;">${booking.budget_indication}</div>
+                </div>` : ''}
+
+                <div style="padding:14px 16px; background:#f1f5f9; border-radius:10px; margin-bottom:16px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:12px;">
+                        <div><span style="color:#64748b;">Created:</span> <span style="color:#1e293b; font-weight:500;">${(booking.created_at || '').slice(0, 19).replace('T', ' ')}</span></div>
+                        <div><span style="color:#64748b;">Updated:</span> <span style="color:#1e293b; font-weight:500;">${(booking.updated_at || booking.created_at || '').slice(0, 19).replace('T', ' ')}</span></div>
+                        <div><span style="color:#64748b;">F&B Required:</span> <span style="color:#1e293b; font-weight:500;">${booking.fnb_required ? 'Yes' : 'No'}</span></div>
+                        <div><span style="color:#64748b;">Meeting Space:</span> <span style="color:#1e293b; font-weight:500;">${booking.meeting_space_required ? 'Yes' : 'No'}</span></div>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:10px;">
+                    <button onclick="document.getElementById('n-booking-id').value='${booking.booking_id}'; closeBookingModal(); switchTab('negotiate'); document.querySelectorAll('.tab')[3].click();" class="btn btn-primary" style="flex:1;">Negotiate This Booking</button>
+                    <button onclick="closeBookingModal()" class="btn btn-secondary" style="flex:1;">Close</button>
+                </div>
+            `;
+
+            modal.style.display = 'flex';
+        }
+
+        function closeBookingModal() {
+            document.getElementById('booking-modal').style.display = 'none';
+        }
+
+        document.getElementById('booking-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeBookingModal();
+        });
 
         function switchTab(name) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -411,6 +527,7 @@
 
                 let totalRevenue = 0, totalRooms = 0, totalNights = 0, active = 0;
                 tbody.innerHTML = '';
+                allBookingsData = data.bookings;
 
                 data.bookings.forEach(b => {
                     const rev = parseFloat(b.estimated_revenue || 0);
@@ -424,7 +541,7 @@
                     if (['NEGOTIATING', 'COUNTER_RECEIVED'].includes(b.status)) active++;
 
                     tbody.innerHTML += `<tr>
-                        <td><strong>${b.booking_id}</strong></td>
+                        <td><a href="#" onclick="showBookingDetail('${b.booking_id}'); return false;" style="color:#dc2626; font-weight:600; font-size:12px; text-decoration:none; cursor:pointer;">${b.booking_id}</a></td>
                         <td>${b.contact_name}${b.company_name ? '<br><span style="font-size:11px;color:#64748b;">' + b.company_name + '</span>' : ''}</td>
                         <td>${b.event_type}</td>
                         <td>${checkin}</td>
