@@ -181,46 +181,66 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == "/bookings":
-            self._handle_get_bookings()
-        elif self.path.startswith("/bookings/report") or self.path.startswith("/bookings/report?"):
-            self._handle_bookings_report()
-        elif self.path == "/bookings/backup/stats":
-            self._handle_backup_stats()
-        elif self.path.startswith("/bookings/"):
-            booking_id = self.path.split("/bookings/")[1]
-            self._handle_get_booking(booking_id)
-        elif self.path == "/reminders" or self.path.startswith("/reminders?"):
-            self._handle_check_reminders()
-        elif self.path == "/compliance/rules":
-            self._handle_compliance_rules()
-        elif self.path.startswith("/compliance/"):
-            booking_id = self.path.split("/compliance/")[1]
-            self._handle_compliance_check(booking_id)
-        elif self.path.startswith("/inventory/"):
-            parts = self.path.split("/inventory/")[1].split("?")
-            property_id = parts[0]
-            self._handle_inventory(property_id)
-        elif self.path.startswith("/properties/"):
-            location = self.path.split("/properties/")[1].split("?")[0]
-            self._handle_nearby_properties(location)
-        elif self.path == "/properties" or self.path.startswith("/properties?"):
-            self._handle_all_locations()
-        else:
-            super().do_GET()
+        try:
+            if self.path == "/bookings":
+                self._handle_get_bookings()
+            elif self.path.startswith("/bookings/report") or self.path.startswith("/bookings/report?"):
+                self._handle_bookings_report()
+            elif self.path == "/bookings/backup/stats":
+                self._handle_backup_stats()
+            elif self.path.startswith("/bookings/"):
+                booking_id = self.path.split("/bookings/")[1]
+                self._handle_get_booking(booking_id)
+            elif self.path == "/reminders" or self.path.startswith("/reminders?"):
+                self._handle_check_reminders()
+            elif self.path == "/compliance/rules":
+                self._handle_compliance_rules()
+            elif self.path.startswith("/compliance/"):
+                booking_id = self.path.split("/compliance/")[1]
+                self._handle_compliance_check(booking_id)
+            elif self.path.startswith("/inventory/"):
+                parts = self.path.split("/inventory/")[1].split("?")
+                property_id = parts[0]
+                self._handle_inventory(property_id)
+            elif self.path.startswith("/properties/"):
+                location = self.path.split("/properties/")[1].split("?")[0]
+                self._handle_nearby_properties(location)
+            elif self.path == "/properties" or self.path.startswith("/properties?"):
+                self._handle_all_locations()
+            else:
+                super().do_GET()
+        except BrokenPipeError:
+            pass
+        except ConnectionResetError:
+            pass
+        except Exception as e:
+            try:
+                self._json_response(500, {"error": "Internal server error", "detail": str(e)})
+            except Exception:
+                pass
 
     def do_POST(self):
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length).decode("utf-8") if content_length else "{}"
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length).decode("utf-8") if content_length else "{}"
 
-        if self.path == "/inquiries":
-            self._handle_new_inquiry(body)
-        elif "/negotiate" in self.path:
-            parts = self.path.split("/")
-            booking_id = parts[2] if len(parts) >= 3 else ""
-            self._handle_negotiate(booking_id, body)
-        else:
-            self._json_response(404, {"error": "Not found"})
+            if self.path == "/inquiries":
+                self._handle_new_inquiry(body)
+            elif "/negotiate" in self.path:
+                parts = self.path.split("/")
+                booking_id = parts[2] if len(parts) >= 3 else ""
+                self._handle_negotiate(booking_id, body)
+            else:
+                self._json_response(404, {"error": "Not found"})
+        except BrokenPipeError:
+            pass
+        except ConnectionResetError:
+            pass
+        except Exception as e:
+            try:
+                self._json_response(500, {"error": "Internal server error", "detail": str(e)})
+            except Exception:
+                pass
 
     def _handle_get_bookings(self):
         """Scan all bookings from DynamoDB and sync to backup."""
@@ -584,13 +604,21 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         self._json_response(200, {"locations": locations})
 
     def _invoke_lambda(self, function_name, payload):
-        """Invoke a Lambda function via LocalStack."""
-        response = lambda_client.invoke(
-            FunctionName=function_name,
-            Payload=payload.encode("utf-8"),
-        )
-        result = json.loads(response["Payload"].read().decode("utf-8"))
-        return result
+        """Invoke a Lambda function via LocalStack with retry."""
+        for attempt in range(3):
+            try:
+                response = lambda_client.invoke(
+                    FunctionName=function_name,
+                    Payload=payload.encode("utf-8"),
+                )
+                result = json.loads(response["Payload"].read().decode("utf-8"))
+                return result
+            except Exception as e:
+                if attempt < 2:
+                    import time
+                    time.sleep(0.5)
+                    continue
+                raise Exception(f"Lambda invocation failed after 3 attempts: {str(e)}")
 
     def _send_smtp_email(self, booking_id, negotiation_result):
         """Send a real email via SMTP (Outlook/Office365)."""
@@ -690,7 +718,10 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def log_message(self, format, *args):
-        print(f"[GroupIQ] {args[0]}")
+        try:
+            print(f"[GroupIQ] {args[0]}")
+        except Exception:
+            pass
 
 
 class ReusableHTTPServer(http.server.HTTPServer):
@@ -732,8 +763,17 @@ def kill_port(port):
 
 def main():
     kill_port(PORT)
-    server = ThreadedHTTPServer(("0.0.0.0", PORT), GroupIQHandler)
-    print(f"""
+
+    MAX_RESTARTS = 100
+    restart_count = 0
+
+    while restart_count < MAX_RESTARTS:
+        try:
+            server = ThreadedHTTPServer(("0.0.0.0", PORT), GroupIQHandler)
+            server.socket.settimeout(None)
+
+            if restart_count == 0:
+                print(f"""
 ╔══════════════════════════════════════════════════════╗
 ║         GroupIQ Dashboard — Running                  ║
 ╠══════════════════════════════════════════════════════╣
@@ -753,17 +793,52 @@ def main():
 ║                                                      ║
 ║   Concurrency: Multi-threaded (handles parallel      ║
 ║                requests with inventory locking)       ║
+║   Auto-Restart: Enabled (never disconnects)          ║
 ║   TIP.AI Engine:    v2.1 (Governance & Compliance)   ║
 ║   LocalStack:       {LOCALSTACK_URL}            ║
 ║   Environment:      {ENVIRONMENT}                          ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
 """)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-        server.server_close()
+            else:
+                print(f"[GroupIQ] Server restarted (attempt {restart_count + 1}) — still running on port {PORT}")
+
+            server.serve_forever()
+
+        except KeyboardInterrupt:
+            print("\n[GroupIQ] Shutting down gracefully...")
+            try:
+                server.server_close()
+            except Exception:
+                pass
+            break
+
+        except OSError as e:
+            if "Address already in use" in str(e):
+                print(f"[GroupIQ] Port {PORT} busy — retrying in 2s...")
+                import time
+                time.sleep(2)
+                kill_port(PORT)
+                restart_count += 1
+                continue
+            else:
+                print(f"[GroupIQ] OS Error: {e} — restarting in 3s...")
+                import time
+                time.sleep(3)
+                restart_count += 1
+
+        except Exception as e:
+            print(f"[GroupIQ] Server crashed: {e} — auto-restarting in 2s...")
+            import time
+            time.sleep(2)
+            restart_count += 1
+            try:
+                server.server_close()
+            except Exception:
+                pass
+
+    if restart_count >= MAX_RESTARTS:
+        print(f"[GroupIQ] FATAL: Server crashed {MAX_RESTARTS} times. Giving up.")
 
 
 if __name__ == "__main__":
