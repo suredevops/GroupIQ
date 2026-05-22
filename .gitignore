@@ -27,6 +27,3 @@ htmlcov/
 # LocalStack data
 .localstack/
 volume/
-
-# Auto-generated backup (changes on every test)
-data/bookings_backup.json
