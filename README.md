@@ -1,6 +1,8 @@
 # GroupIQ — AI-Powered Group Booking Platform for Marriott
 
-An end-to-end serverless AI agent that automates group booking negotiations for Marriott International. It accepts group inquiries, calculates dynamic pricing based on 8 market factors, generates customized proposals with AI, negotiates counter-offers autonomously, manages room inventory with concurrency control, and sends real email notifications — all without manual intervention.
+An end-to-end serverless AI agent that automates group booking negotiations for Marriott International. It accepts group inquiries, calculates dynamic pricing based on 12+ market factors (including IPL cricket, Indian festivals, Marriott BAR strategy, and customer loyalty), generates customized proposals with AI, negotiates counter-offers autonomously with multi-round support, manages room inventory with concurrency control, and sends real email notifications — all without manual intervention.
+
+**Live Demo:** Admin Portal `http://localhost:5555` | Customer Portal `http://localhost:5555/customer.html`
 
 ---
 
@@ -51,18 +53,24 @@ An end-to-end serverless AI agent that automates group booking negotiations for 
 
 | Feature | Description |
 |---------|-------------|
-| **Dynamic Pricing Engine** | 8-factor rate calculation (seasonality, occupancy, competitor, lead time, holidays, day-of-week, group size, stay length) |
+| **Customer Portal** | Separate customer-facing UI with email-based login, inquiry submission, multi-round negotiation, and communications log |
+| **Admin Portal** | Full admin dashboard with all bookings, real-time auto-refresh (15s), compliance, inventory, and reports |
+| **Dynamic Pricing Engine** | 12-factor rate calculation (seasonality, occupancy, competitor, lead time, holidays, IPL/cricket, festivals, Marriott BAR strategy, loyalty concession, group size, stay length, local demand) |
+| **Customer Intelligence** | Marriott Bonvoy loyalty tier detection, repeat guest concessions, lifetime value scoring, corporate account benefits |
+| **Multi-Round Negotiation** | Full negotiation lifecycle: ACCEPT ($265+) / COUNTER ($180-$265) / ESCALATE (<$180) / DECLINE with visual timeline |
+| **Inquiry → Booking ID Flow** | INQ- prefix for inquiries, GRP- prefix generated only on acceptance — clear lifecycle tracking |
 | **Concurrency Control** | Atomic room inventory with DynamoDB conditional writes — prevents overbooking under simultaneous load |
 | **AI Negotiation** | Autonomous ACCEPT/COUNTER/ESCALATE decisions using Claude 3 Sonnet via Amazon Bedrock |
 | **AI Proposal Generation** | Customized multi-tier proposals (Good/Better/Best) with pricing rationale |
-| **Email Notifications** | Real email delivery via Gmail SMTP for booking confirmations, counter-offers, and escalations |
+| **Email Notifications** | Real email delivery via Gmail SMTP for booking confirmations, counter-offers, escalations, and declines |
+| **Demand-Based Pricing** | IPL cricket matches, Indian festivals (Diwali, Holi), wedding season, corporate events drive rate adjustments |
+| **Marriott Strategy** | BAR (Best Available Rate) logic with premium/value positioning based on demand score |
 | **Room Inventory Tracking** | Real-time availability with soft holds during negotiation and hard reservations on acceptance |
 | **Priority Queue** | Large bookings (100+ rooms) are queued for sequential processing |
 | **TIP.AI Governance** | Enterprise compliance checks on all bookings (risk scoring, policy validation) |
 | **Property Search** | Nearby Marriott properties with Google Maps, room type breakdowns, and availability |
 | **Persistent Backup** | Booking data survives LocalStack restarts via local JSON backup |
 | **Booking Reports** | Weekly, monthly, yearly analytics with revenue breakdowns |
-| **Modern Dashboard** | Light-themed responsive UI with real-time stats, booking details, and pricing visualization |
 | **Auto-Restart Server** | Crash-proof server that never disconnects — auto-recovers from any failure |
 
 ---
@@ -93,9 +101,10 @@ GroupIQ/
 ├── lambdas/
 │   ├── common/                      # Shared modules (all Lambdas)
 │   │   ├── utils.py                # DynamoDB, S3, SES clients, booking status, inventory manager
-│   │   ├── pricing_engine.py       # Dynamic pricing calculation (8 factors)
-│   │   ├── calendar_data.py        # Seasonality, holidays, events, lead time tiers
-│   │   ├── market_data.py          # Simulated occupancy, competitor rates, volume discounts
+│   │   ├── pricing_engine.py       # Dynamic pricing calculation (12 factors)
+│   │   ├── calendar_data.py        # Seasonality, holidays, IPL, festivals, lead time tiers
+│   │   ├── market_data.py          # Occupancy, competitor rates, Marriott BAR strategy
+│   │   ├── customer_intelligence.py # Loyalty tiers, repeat guest, lifetime value, corporate
 │   │   └── requirements.txt
 │   ├── intake/                      # Validates inquiries, runs pricing engine, holds inventory
 │   │   ├── handler.py
@@ -116,8 +125,9 @@ GroupIQ/
 │       ├── handler.py
 │       └── requirements.txt
 ├── web/
-│   ├── index.html                   # Dashboard UI (modern, responsive)
-│   └── server.py                    # Local API server (multi-threaded, auto-restart)
+│   ├── index.html                   # Admin Portal UI (all bookings, analytics, compliance)
+│   ├── customer.html                # Customer Portal (login, inquiries, negotiate, communications)
+│   └── server.py                    # Local API server (multi-threaded, SMTP email, auto-restart)
 ├── terraform/                       # Infrastructure as Code (AWS deployment)
 │   ├── main.tf                     # Provider and backend config
 │   ├── variables.tf                # Input variables
@@ -131,6 +141,8 @@ GroupIQ/
 ├── step_functions/
 │   └── workflow.asl.json            # State machine definition (ASL)
 ├── scripts/
+│   ├── setup.sh                    # One-command setup after cloning (venv + deps + tests)
+│   ├── start_web.sh                # Start web server with Gmail SMTP config
 │   ├── build.sh                    # Package Lambdas for deployment
 │   ├── deploy_local.sh             # Deploy to LocalStack (local development)
 │   ├── seed_data.sh                # Load pricing rules into DynamoDB
@@ -143,6 +155,7 @@ GroupIQ/
 │   ├── conftest.py                 # Test fixtures
 │   ├── test_lambdas.py            # Lambda integration tests
 │   └── test_utils.py              # Unit tests for utilities
+├── .gitignore                       # Excludes .venv/, __pycache__/, .env
 ├── docker-compose.yml              # LocalStack container configuration
 └── README.md
 ```
@@ -151,7 +164,7 @@ GroupIQ/
 
 ## Dynamic Pricing Engine
 
-The pricing engine calculates optimal room rates using 8 market factors:
+The pricing engine calculates optimal room rates using **12 market factors**:
 
 ```
 Base Rate: $299/night
@@ -159,15 +172,19 @@ Base Rate: $299/night
 Event Date: September 15 (weekday, peak conference season)
 ├── Seasonality (September):         +12%
 ├── Weekday business demand:         +5%
-├── Lead time (4 months out):        0%
-├── Simulated occupancy (65%):       0%
+├── Holiday/Event (IPL, Festival):   +18%
+├── Lead time (4 months out):         0%
+├── Simulated occupancy (65%):        0%
 ├── Competitor benchmark ($313):     +2%
 ├── Group size (75 rooms):           -5%
 ├── Length of stay (3 nights):       -4%
-└── No holiday:                      0%
+├── Local Demand (City events):     +30%
+├── Marriott BAR Strategy:          +3%
+├── Loyalty Concession (Silver):    -3%
+└── Rate Cap (peak):                 cap
 
-Combined Multiplier: ×1.094
-Final Rate: $327/night (clamped between $254 floor — $399 peak)
+Combined Multiplier: ×1.66
+Final Rate: $399/night (capped at peak rate)
 ```
 
 | Factor | Range | Source File |
@@ -180,6 +197,10 @@ Final Rate: $327/night (clamped between $254 floor — $399 peak)
 | Competitor Rates | -5% to +5% | `market_data.py` |
 | Group Size | -12% to 0% | `market_data.py` |
 | Length of Stay | -10% to 0% | `market_data.py` |
+| Local Demand (IPL/City) | 0% to +50% | `calendar_data.py` |
+| Marriott BAR Strategy | -3% to +8% | `market_data.py` |
+| Loyalty Concession | -20% to 0% | `customer_intelligence.py` |
+| Rate Cap (floor/peak) | Guardrails | `pricing_engine.py` |
 
 ---
 
@@ -225,17 +246,20 @@ Booking Flow:
 
 ### 4. AI Negotiation (Counter-Offers)
 - Client responds with counter-offer via `POST /inquiries/{id}/negotiate`
-- Negotiation Agent Lambda evaluates against bounds:
-  - **ACCEPT** — within threshold → atomically reserves rooms (conditional write)
-  - **COUNTER** — room to compromise → AI generates counter-proposal
-  - **ESCALATE** — exceeds bounds → SNS alert to sales manager
+- Negotiation Agent Lambda evaluates against thresholds:
+  - **ACCEPT** (≥ $265/night) → atomically reserves rooms, generates GRP- booking ID
+  - **COUNTER** ($180-$265) → AI generates counter-proposal with perks (breakfast + late checkout)
+  - **ESCALATE** (< $180) → SNS alert to sales manager for personalized offer
+  - **DECLINE** → Customer explicitly rejects, status updated system-wide
 - If inventory insufficient at acceptance → auto-escalates
 - Optimistic locking prevents duplicate acceptance (HTTP 409)
-- Max 5 negotiation rounds before auto-escalation
+- Max 10 negotiation rounds before auto-escalation
+- Full negotiation timeline tracked with visual history
 
 ### 5. Resolution
-- Accepted → email confirmation + rooms permanently reserved
+- Accepted → INQ- converts to GRP- booking ID, email confirmation + rooms permanently reserved
 - Escalated → human sales manager picks up with full context
+- Declined → status updated, customer can re-inquire anytime
 - Expired → rooms released back to inventory
 
 ---
@@ -247,41 +271,55 @@ Booking Flow:
 - Python 3.12+
 - AWS CLI v2
 
-### Quick Start
+### Quick Start (One Command)
 
 ```bash
-# 1. Clone and setup
+# 1. Clone the repo
+git clone https://github.com/suredevops/GroupIQ.git
 cd GroupIQ
-python3 -m venv .venv
-source .venv/bin/activate
-pip install boto3
 
-# 2. Start LocalStack
+# 2. Run setup (creates venv, installs all dependencies, runs tests)
+bash scripts/setup.sh
+
+# 3. Start LocalStack
 docker-compose up -d
 
-# 3. Deploy all resources
+# 4. Deploy all resources
 bash scripts/deploy_local.sh
 
-# 4. Start the web server (with email support)
-SMTP_HOST="smtp.gmail.com" \
-SMTP_PORT="587" \
-SMTP_USERNAME="your-email@gmail.com" \
-SMTP_PASSWORD="your-app-password" \
-SES_SENDER_EMAIL="your-email@gmail.com" \
-python3 web/server.py
+# 5. Start the web server
+bash scripts/start_web.sh
 
-# 5. Open dashboard
-open http://localhost:5555
+# 6. Open portals
+open http://localhost:5555              # Admin Portal
+open http://localhost:5555/customer.html  # Customer Portal
 ```
+
+### Enable Real Email Notifications (Gmail)
+
+```bash
+# Generate App Password: https://myaccount.google.com/apppasswords
+SMTP_PASSWORD='your-16-char-app-password' bash scripts/start_web.sh
+```
+
+### Portals
+
+| Portal | URL | Purpose |
+|--------|-----|---------|
+| **Admin Portal** | `http://localhost:5555` | View ALL bookings, analytics, compliance, inventory |
+| **Customer Portal** | `http://localhost:5555/customer.html` | Customer login, submit inquiries, negotiate, track status |
 
 ### API Endpoints (Local)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/bookings` | List all bookings |
+| `GET` | `/bookings` | List all bookings (admin) |
 | `GET` | `/bookings/{id}` | Get booking details |
 | `POST` | `/inquiries` | Submit new group booking inquiry |
 | `POST` | `/inquiries/{id}/negotiate` | Submit counter-offer |
+| `GET` | `/customer/bookings?email=X` | Get customer's bookings only |
+| `POST` | `/customer/inquiries` | Customer portal inquiry submission |
+| `POST` | `/customer/inquiries/{id}/negotiate` | Customer counter-offer |
 | `GET` | `/inventory/{property_id}?date=YYYY-MM-DD` | Check room availability |
 | `GET` | `/properties` | List all supported locations |
 | `GET` | `/properties/{code}` | Nearby Marriott properties with maps |
@@ -290,24 +328,28 @@ open http://localhost:5555
 | `GET` | `/compliance/{id}` | TIP.AI compliance check |
 | `GET` | `/compliance/rules` | View compliance rules |
 
-### Test Commands
+### Test the Full Negotiation Flow
 
 ```bash
-# Create a booking (September conference, 75 rooms)
-curl -s -X POST http://localhost:5555/inquiries \
+# Step 1: Create an inquiry (gets INQ- ID)
+curl -s -X POST http://localhost:5555/customer/inquiries \
   -H 'Content-Type: application/json' \
-  -d '{"contact_name":"Sarah Johnson","contact_email":"sarah@techcorp.com","event_type":"conference","event_date":"2026-09-15","num_rooms":75,"num_nights":3,"property_id":"MRIOTT-NYC-001","company_name":"TechCorp"}' | python3 -m json.tool
+  -d '{"contact_name":"Test User","contact_email":"test@demo.com","event_type":"corporate","event_date":"2026-11-10","check_in_date":"2026-11-10","check_out_date":"2026-11-13","num_rooms":25,"num_nights":3,"property_id":"MRIOTT-HYD-001"}' | python3 -m json.tool
 
-# Accept a booking
-curl -s -X POST http://localhost:5555/inquiries/BOOKING_ID/negotiate \
+# Step 2: Negotiate at $250 (COUNTER response)
+curl -s -X POST http://localhost:5555/customer/inquiries/INQ-XXXXXXXX/negotiate \
   -H 'Content-Type: application/json' \
-  -d '{"decision":"ACCEPT"}' | python3 -m json.tool
+  -d '{"proposed_room_rate": 250, "message": "Can you offer a better rate?"}' | python3 -m json.tool
 
-# Check inventory
-curl -s 'http://localhost:5555/inventory/MRIOTT-NYC-001?date=2026-09-15' | python3 -m json.tool
+# Step 3: Negotiate at $170 (ESCALATE response)
+curl -s -X POST http://localhost:5555/customer/inquiries/INQ-XXXXXXXX/negotiate \
+  -H 'Content-Type: application/json' \
+  -d '{"proposed_room_rate": 170, "message": "Please escalate to manager"}' | python3 -m json.tool
 
-# View properties in Hyderabad
-curl -s 'http://localhost:5555/properties/HYD' | python3 -m json.tool
+# Step 4: Accept at $265 (ACCEPT → GRP- booking ID created)
+curl -s -X POST http://localhost:5555/customer/inquiries/INQ-XXXXXXXX/negotiate \
+  -H 'Content-Type: application/json' \
+  -d '{"proposed_room_rate": 265, "message": "I accept"}' | python3 -m json.tool
 ```
 
 ---
@@ -344,6 +386,9 @@ The AI is used for:
 | Decision | Rationale |
 |----------|-----------|
 | Dynamic pricing over fixed rates | Maximizes RevPAR, responds to market conditions automatically |
+| 12-factor pricing model | Captures demand signals (IPL, festivals, loyalty) that 8-factor model missed |
+| INQ- → GRP- ID lifecycle | Clear distinction between inquiry and confirmed booking for tracking |
+| Separate customer & admin portals | Customers see only their data; admins see everything — role-based access |
 | DynamoDB conditional writes for inventory | Prevents overbooking under concurrent load without distributed locks |
 | Bedrock over SageMaker | Managed, no model hosting infra, instant scaling |
 | Step Functions over SQS chains | Visual workflow, built-in wait/retry, easier debugging |
@@ -352,8 +397,11 @@ The AI is used for:
 | Mock Bedrock fallback | Allows full local testing without AWS credentials |
 | Persistent JSON backup | Survives LocalStack restarts, enables offline analytics |
 | Tiered pricing (Good/Better/Best) | Anchoring effect — clients often pick the middle tier |
-| Max 5 negotiation rounds | Prevents infinite loops, forces resolution |
+| Max 10 negotiation rounds | Prevents infinite loops, forces resolution |
 | Floor/Peak rate guardrails | Protects revenue floor, prevents price gouging |
+| Email-based customer login | Simple demo auth without password complexity — sessionStorage based |
+| Auto-refresh admin (15s) | Real-time visibility of customer actions without manual refresh |
+| Gmail SMTP for local | Real email delivery without AWS SES setup for demos |
 
 ---
 
@@ -401,12 +449,15 @@ Each property includes: precise address, GPS coordinates, Google Maps link, room
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | HTML5, CSS3, JavaScript (vanilla) |
-| Backend (Local) | Python HTTP Server (multi-threaded, auto-restart) |
+| Frontend (Admin) | HTML5, CSS3, JavaScript — real-time dashboard with auto-refresh |
+| Frontend (Customer) | HTML5, CSS3, JavaScript — email login, negotiation timeline |
+| Backend (Local) | Python HTTP Server (multi-threaded, SMTP email, auto-restart) |
 | Backend (AWS) | API Gateway + Lambda + Step Functions |
-| Database | Amazon DynamoDB |
+| Database | Amazon DynamoDB (5 tables, conditional writes) |
 | AI/ML | Amazon Bedrock (Claude 3 Sonnet) |
 | Email | Gmail SMTP (local) / Amazon SES (production) |
 | Infrastructure | Terraform, Docker, LocalStack |
-| Pricing | Custom engine (Python) — 8 market factors |
+| Pricing | Custom engine (Python) — 12 market factors |
+| Customer Intelligence | Marriott Bonvoy loyalty, CRM, lifetime value scoring |
 | Monitoring | Amazon CloudWatch, AWS X-Ray |
+| Testing | pytest + moto (AWS mocking) — 18 automated tests |
