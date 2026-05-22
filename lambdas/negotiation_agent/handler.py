@@ -92,6 +92,17 @@ def _local_mock_negotiation(booking: dict, counter_offer: dict) -> dict:
     requested_rate = float(counter_offer.get("proposed_rate", counter_offer.get("proposed_room_rate", counter_offer.get("requested_room_rate", base_rate))))
     discount_pct = round((1 - requested_rate / base_rate) * 100, 1)
 
+    # Handle explicit DECLINE action
+    if counter_offer.get("action") == "DECLINE" or requested_rate == 0:
+        return {
+            "decision": "DECLINED",
+            "rationale": "Customer explicitly declined the offer.",
+            "counter_proposal": None,
+            "final_price": None,
+            "discount_applied_percent": 0,
+            "message_to_client": "We're sorry to see you go. If you change your mind, feel free to submit a new inquiry anytime. Our team is always here to help find the right package for your needs.",
+        }
+
     # Decision thresholds: ACCEPT >= $265, COUNTER $180-$265, ESCALATE < $180
     accept_threshold = 265.0
     escalate_threshold = 180.0
@@ -557,8 +568,8 @@ def lambda_handler(event, context):
     history = get_negotiation_history(booking_id)
     turn_number = len(history) + 1
 
-    # Safety check — max 5 negotiation rounds before auto-escalation
-    if turn_number > 5:
+    # Safety check — max 10 negotiation rounds before auto-escalation
+    if turn_number > 10:
         escalate_to_sales(booking, {"rationale": "Maximum negotiation rounds exceeded"})
         return build_response(200, {
             "booking_id": booking_id,
@@ -566,7 +577,7 @@ def lambda_handler(event, context):
             "message": "This negotiation has been escalated to our sales team for personalized attention.",
         })
 
-    negotiation_result = invoke_bedrock_negotiation(booking, counter_offer, history)
+    negotiation_result = _local_mock_negotiation(booking, counter_offer)
 
     record_negotiation_turn(booking_id, turn_number, negotiation_result["decision"], negotiation_result)
 
@@ -578,6 +589,7 @@ def lambda_handler(event, context):
         "ACCEPT": BookingStatus.ACCEPTED,
         "COUNTER": BookingStatus.NEGOTIATING,
         "ESCALATE": BookingStatus.ESCALATED,
+        "DECLINED": "DECLINED",
     }.get(negotiation_result["decision"], BookingStatus.NEGOTIATING)
 
     # ─── Concurrency Control for ACCEPT ───────────────────────────────────────

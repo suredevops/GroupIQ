@@ -54,6 +54,7 @@
         .badge-negotiating { background: #faf5ff; color: #9333ea; border: 1px solid #e9d5ff; }
         .badge-accepted { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
         .badge-escalated { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .badge-declined { background: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
 
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .form-group { display: flex; flex-direction: column; }
@@ -583,6 +584,7 @@
                 'NEGOTIATING': 'negotiating',
                 'ACCEPTED': 'accepted',
                 'ESCALATED': 'escalated',
+                'DECLINED': 'declined',
             };
             const cls = map[status] || 'received';
             return `<span class="badge badge-${cls}">${(status || '').replace(/_/g, ' ')}</span>`;
@@ -1558,6 +1560,8 @@
         }
 
         loadBookings();
+        // Auto-refresh bookings every 15 seconds for real-time updates
+        setInterval(loadBookings, 15000);
     </script>
 </body>
 </html>
