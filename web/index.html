@@ -163,7 +163,7 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Booking ID</th>
+                            <th>ID (INQ/GRP)</th>
                             <th>Contact</th>
                             <th>Event</th>
                             <th>Check-In</th>
@@ -205,13 +205,23 @@
                                 <option value="conference">Conference</option>
                                 <option value="wedding">Wedding</option>
                                 <option value="corporate">Corporate Event</option>
+                                <option value="ipl_cricket">IPL Cricket Match</option>
+                                <option value="cricket_tournament">Cricket Tournament</option>
+                                <option value="sports_event">Sports Event</option>
+                                <option value="festival">Festival / Celebration</option>
+                                <option value="product_launch">Product Launch</option>
                                 <option value="social">Social</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Event Date *</label>
-                            <input type="date" id="f-date" required onchange="autoCheckAvailability()">
+                            <label>Check-in Date *</label>
+                            <input type="date" id="f-date" required onchange="autoCheckAvailability(); calcNights()">
                         </div>
+                        <div class="form-group">
+                            <label>Check-out Date *</label>
+                            <input type="date" id="f-date-end" required onchange="calcNights()">
+                        </div>
+                        <div id="nights-display" style="display:none; font-size:13px; color:#1e40af; font-weight:600; margin:-8px 0 8px 0;"></div>
                         <div class="form-group">
                             <label>Property ID *</label>
                             <input type="text" id="f-property" value="MRIOTT-NYC-001" required>
@@ -245,6 +255,7 @@
                         <button type="submit" class="btn btn-primary">Submit Inquiry</button>
                         <button type="reset" class="btn btn-secondary">Reset Form</button>
                     </div>
+                    <div id="demand-hint-panel" style="display:none; margin-top:16px;"></div>
                     <div id="inventory-error-panel" style="display:none;"></div>
                 </form>
             </div>
@@ -584,7 +595,7 @@
             return d.toISOString().split('T')[0];
         }
 
-        function buildPricingPanel(data, pricing, breakdown, revenue, market, concInfo) {
+        function buildPricingPanel(data, pricing, breakdown, revenue, market, concInfo, customerIntel) {
             var factorsHtml = '';
             breakdown.forEach(function(f) {
                 var mult = f.multiplier;
@@ -602,6 +613,39 @@
                     '<span style="font-size:12px; font-weight:700; color:' + color + ';">' + f.impact + '</span>' +
                     '</div>';
             });
+
+            // Customer Intelligence panel
+            var customerHtml = '';
+            if (customerIntel) {
+                var tierColors = {'MEMBER': '#94a3b8', 'SILVER': '#9ca3af', 'GOLD': '#d97706', 'PLATINUM': '#6366f1', 'TITANIUM': '#1d4ed8', 'AMBASSADOR': '#7c2d12'};
+                var tierColor = tierColors[customerIntel.tier] || '#64748b';
+                var perksHtml = (customerIntel.perks || []).map(function(p) { return '<span style="font-size:10px; background:' + tierColor + '15; color:' + tierColor + '; padding:2px 8px; border-radius:4px; border:1px solid ' + tierColor + '30;">' + p + '</span>'; }).join(' ');
+
+                var concessionValue = customerIntel.total_concession_pct || 0;
+                var concessionHtml = concessionValue > 0
+                    ? '<div style="font-size:16px; font-weight:700; color:#16a34a;">-' + concessionValue.toFixed(1) + '%</div>'
+                    : '<div style="font-size:16px; font-weight:700; color:#94a3b8;">0%</div>';
+
+                var upgradeHint = '';
+                if (customerIntel.tier === 'MEMBER') {
+                    upgradeHint = '<div style="margin-top:10px; padding:10px 14px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px;"><span style="font-size:11px; color:#d97706;">💡 New customer — enroll in <strong>Marriott Bonvoy</strong> to unlock up to 20% concession on future bookings! Silver status starts at 10 qualifying nights.</span></div>';
+                }
+
+                customerHtml = '<div style="margin-bottom:16px; padding:16px; background:linear-gradient(135deg, ' + tierColor + '08, ' + tierColor + '15); border:1px solid ' + tierColor + '30; border-radius:12px;">' +
+                    '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
+                    '<div><h5 style="font-size:13px; color:' + tierColor + '; margin:0; text-transform:uppercase; letter-spacing:0.5px;">🏆 Customer Intelligence</h5>' +
+                    '<span style="font-size:11px; color:#64748b;">Source: ' + (customerIntel.source || 'CRM') + '</span></div>' +
+                    '<div style="background:' + tierColor + '; color:white; padding:4px 12px; border-radius:6px; font-size:11px; font-weight:700;">' + customerIntel.tier_label + '</div></div>' +
+                    '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-bottom:10px;">' +
+                    '<div style="text-align:center; padding:8px; background:white; border-radius:6px;"><div style="font-size:9px; color:#64748b;">BOOKINGS</div><div style="font-size:16px; font-weight:700; color:#1e293b;">' + (customerIntel.bookings_count || 0) + '</div></div>' +
+                    '<div style="text-align:center; padding:8px; background:white; border-radius:6px;"><div style="font-size:9px; color:#64748b;">LIFETIME REV</div><div style="font-size:16px; font-weight:700; color:#1e293b;">$' + ((customerIntel.lifetime_revenue || 0) / 1000).toFixed(0) + 'K</div></div>' +
+                    '<div style="text-align:center; padding:8px; background:white; border-radius:6px;"><div style="font-size:9px; color:#64748b;">NIGHTS</div><div style="font-size:16px; font-weight:700; color:#1e293b;">' + (customerIntel.lifetime_nights || 0) + '</div></div>' +
+                    '<div style="text-align:center; padding:8px; background:white; border-radius:6px;"><div style="font-size:9px; color:#16a34a;">CONCESSION</div>' + concessionHtml + '</div>' +
+                    '</div>' +
+                    (customerIntel.is_corporate_account ? '<div style="margin-bottom:8px;"><span style="font-size:10px; background:#eff6ff; color:#2563eb; padding:3px 8px; border-radius:4px; border:1px solid #bfdbfe; font-weight:600;">✓ Corporate Account</span></div>' : '') +
+                    (perksHtml ? '<div style="display:flex; flex-wrap:wrap; gap:4px;">' + perksHtml + '</div>' : '') +
+                    upgradeHint + '</div>';
+            }
 
             var queueHtml = concInfo.queued
                 ? '<div style="margin-top:10px; padding:10px 14px; background:#fef3c7; border:1px solid #fde68a; border-radius:8px;"><span style="font-size:11px; color:#d97706; font-weight:600;">🔒 Large Booking Queued — ' + (concInfo.rooms_held || 0) + ' rooms held for priority processing</span></div>'
@@ -635,6 +679,8 @@
                 '<div style="padding:12px; background:#faf5ff; border-radius:10px; border:1px solid #e9d5ff;"><div style="font-size:10px; color:#9333ea; text-transform:uppercase; letter-spacing:0.5px;">Competitor Rate</div><div style="font-size:20px; font-weight:800; color:#9333ea; margin-top:4px;">$' + (market.competitor_rate || 0) + '</div><div style="font-size:10px; color:#64748b; margin-top:2px;">Benchmark rate</div></div>' +
                 '</div>' +
 
+                customerHtml +
+
                 '<div style="padding:14px 18px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px;">' +
                 '<div style="display:flex; justify-content:space-between; align-items:center;">' +
                 '<div><span style="font-size:12px; color:#16a34a; font-weight:600;">Revenue: $' + (pricing.final_rate || 299) + '/night × ' + (revenue.num_rooms || 0) + ' rooms × ' + (revenue.num_nights || 0) + ' nights</span>' + savingsHtml + '</div>' +
@@ -662,8 +708,8 @@
                     const rev = parseFloat(b.estimated_revenue || 0);
                     const rooms = parseInt(b.num_rooms || 0);
                     const nights = parseInt(b.num_nights || 1);
-                    const checkin = b.event_date || '—';
-                    const checkout = getCheckoutDate(b.event_date, b.num_nights);
+                    const checkin = b.check_in_date || b.event_date || '—';
+                    const checkout = b.check_out_date || b.event_end_date || getCheckoutDate(b.event_date, b.num_nights);
                     totalRevenue += rev;
                     totalRooms += rooms;
                     totalNights += nights;
@@ -692,6 +738,83 @@
             } catch (e) {
                 document.getElementById('bookings-table').innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="icon">⚠️</div><p>Error: ${e.message}. Is the backend running?</p></div></td></tr>`;
             }
+        }
+
+        // IPL & Demand Events Calendar — shows pricing hint when date is selected
+        const DEMAND_EVENTS = {
+            '03-22': {event: 'IPL Season Opener', type: 'cricket', impact: '+35%', icon: '🏏'},
+            '03-23': {event: 'IPL Weekend Match', type: 'cricket', impact: '+30%', icon: '🏏'},
+            '03-29': {event: 'IPL Weekend (RCB Home - BLR)', type: 'cricket', impact: '+30%', icon: '🏏'},
+            '03-30': {event: 'IPL Weekend (DC Home - DEL)', type: 'cricket', impact: '+30%', icon: '🏏'},
+            '04-05': {event: 'IPL Weekend Match', type: 'cricket', impact: '+28%', icon: '🏏'},
+            '04-06': {event: 'IPL SRH vs RCB (HYD)', type: 'cricket', impact: '+38%', icon: '🏏'},
+            '04-12': {event: 'IPL Playoffs Week', type: 'cricket', impact: '+35%', icon: '🏏'},
+            '04-13': {event: 'IPL Playoffs', type: 'cricket', impact: '+35%', icon: '🏏'},
+            '04-19': {event: 'IPL MI Derby (BOM)', type: 'cricket', impact: '+38%', icon: '🏏'},
+            '04-26': {event: 'IPL Qualifier Week', type: 'cricket', impact: '+35%', icon: '🏏'},
+            '04-27': {event: 'IPL Qualifier', type: 'cricket', impact: '+42%', icon: '🏏'},
+            '05-03': {event: 'IPL Final Week', type: 'cricket', impact: '+40%', icon: '🏏'},
+            '05-04': {event: 'IPL FINAL — Wankhede (BOM)', type: 'cricket', impact: '+50%', icon: '🏏🏆'},
+            '10-05': {event: 'ICC T20 World Cup', type: 'cricket', impact: '+35%', icon: '🏏'},
+            '11-01': {event: 'Diwali', type: 'festival', impact: '+40%', icon: '🪔'},
+            '11-02': {event: 'Diwali (Day 2)', type: 'festival', impact: '+35%', icon: '🪔'},
+            '10-12': {event: 'Dussehra', type: 'festival', impact: '+30%', icon: '🎆'},
+            '03-25': {event: 'Holi Festival', type: 'festival', impact: '+25%', icon: '🎨'},
+            '01-26': {event: 'Republic Day', type: 'national', impact: '+20%', icon: '🇮🇳'},
+            '08-15': {event: 'Independence Day', type: 'national', impact: '+25%', icon: '🇮🇳'},
+            '12-25': {event: 'Christmas', type: 'holiday', impact: '+45%', icon: '🎄'},
+            '12-31': {event: 'New Year\'s Eve', type: 'holiday', impact: '+50%', icon: '🎉'},
+            '07-04': {event: 'US Independence Day', type: 'holiday', impact: '+40%', icon: '🇺🇸'},
+            '09-15': {event: 'NY Fashion Week / Corp Peak', type: 'demand', impact: '+30%', icon: '📈'},
+            '11-20': {event: 'Wedding Season Peak Start', type: 'wedding', impact: '+25%', icon: '💒'},
+        };
+
+        function showDemandHint() {
+            const dateVal = document.getElementById('f-date').value;
+            const panel = document.getElementById('demand-hint-panel');
+            if (!dateVal) { panel.style.display = 'none'; return; }
+
+            const mmdd = dateVal.slice(5); // "MM-DD"
+            const event = DEMAND_EVENTS[mmdd];
+
+            if (event) {
+                const typeColors = {cricket: '#16a34a', festival: '#d97706', holiday: '#dc2626', national: '#2563eb', demand: '#9333ea', wedding: '#ec4899'};
+                const color = typeColors[event.type] || '#64748b';
+                panel.style.display = 'block';
+                panel.innerHTML = `
+                    <div style="padding:14px 18px; background:${color}08; border:1px solid ${color}30; border-radius:10px; display:flex; align-items:center; gap:12px;">
+                        <span style="font-size:28px;">${event.icon}</span>
+                        <div style="flex:1;">
+                            <div style="font-size:13px; font-weight:700; color:${color};">${event.event}</div>
+                            <div style="font-size:11px; color:#64748b; margin-top:2px;">High demand date — pricing will be adjusted <strong style="color:${color};">${event.impact}</strong> due to ${event.type} demand</div>
+                        </div>
+                        <div style="background:${color}; color:white; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:700;">${event.impact}</div>
+                    </div>
+                `;
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
+        // Hook date change to also show demand hints
+        document.getElementById('f-date').addEventListener('change', showDemandHint);
+
+        function calcNights() {
+            const cin = document.getElementById('f-date').value;
+            const cout = document.getElementById('f-date-end').value;
+            const el = document.getElementById('nights-display');
+            if (cin && cout) {
+                const diff = Math.round((new Date(cout) - new Date(cin)) / 86400000);
+                if (diff > 0) {
+                    el.textContent = `${diff} night${diff>1?'s':''}`;
+                    el.style.display = 'block';
+                    document.getElementById('f-nights').value = diff;
+                } else {
+                    el.textContent = 'Check-out must be after check-in';
+                    el.style.color = '#dc2626';
+                    el.style.display = 'block';
+                }
+            } else { el.style.display = 'none'; }
         }
 
         async function autoCheckAvailability() {
@@ -739,6 +862,8 @@
                 company_name: document.getElementById('f-company').value,
                 event_type: document.getElementById('f-event-type').value,
                 event_date: document.getElementById('f-date').value,
+                check_in_date: document.getElementById('f-date').value,
+                check_out_date: document.getElementById('f-date-end').value,
                 num_rooms: parseInt(document.getElementById('f-rooms').value),
                 num_nights: parseInt(document.getElementById('f-nights').value),
                 property_id: document.getElementById('f-property').value,
@@ -789,11 +914,12 @@
                     const breakdown = pricing.breakdown || [];
                     const revenue = pricing.revenue_summary || {};
                     const market = pricing.market_data || {};
+                    const customerIntel = data.customer_intelligence || null;
 
                     // Show pricing breakdown panel
                     const panel = document.getElementById('inventory-error-panel');
                     panel.style.display = 'block';
-                    panel.innerHTML = buildPricingPanel(data, pricing, breakdown, revenue, market, concInfo);
+                    panel.innerHTML = buildPricingPanel(data, pricing, breakdown, revenue, market, concInfo, customerIntel);
 
                     showToast('✓ Booking ' + data.booking_id + ' created | Rate: $' + (pricing.final_rate || 299) + '/night | Revenue: $' + (data.estimated_revenue || 0).toLocaleString());
                     loadBookings();

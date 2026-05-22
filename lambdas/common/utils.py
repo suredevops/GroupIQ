@@ -48,6 +48,10 @@ def generate_booking_id() -> str:
     return f"GRP-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
 
+def generate_inquiry_id() -> str:
+    return f"INQ-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+
+
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -96,9 +100,15 @@ class EventType:
 
 # ─── Room Inventory & Concurrency Control ─────────────────────────────────────
 
-INVENTORY_TABLE = os.environ.get("INVENTORY_TABLE", "groupiq-inventory-local")
-BOOKING_QUEUE_TABLE = os.environ.get("BOOKING_QUEUE_TABLE", "groupiq-booking-queue-local")
 LARGE_BOOKING_THRESHOLD = int(os.environ.get("LARGE_BOOKING_THRESHOLD", "100"))
+
+
+def _get_inventory_table_name():
+    return os.environ.get("INVENTORY_TABLE", "groupiq-inventory-local")
+
+
+def _get_booking_queue_table_name():
+    return os.environ.get("BOOKING_QUEUE_TABLE", "groupiq-booking-queue-local")
 
 
 class InventoryManager:
@@ -109,7 +119,7 @@ class InventoryManager:
 
     def get_available_rooms(self, property_id: str, event_date: str) -> int:
         """Get current available room count for a property on a date."""
-        table = self.dynamodb.Table(INVENTORY_TABLE)
+        table = self.dynamodb.Table(_get_inventory_table_name())
         try:
             response = table.get_item(
                 Key={"property_id": property_id, "date": event_date}
@@ -124,7 +134,7 @@ class InventoryManager:
     def _initialize_inventory(self, property_id: str, event_date: str) -> int:
         """Initialize inventory for a property-date if not exists."""
         default_capacity = 500
-        table = self.dynamodb.Table(INVENTORY_TABLE)
+        table = self.dynamodb.Table(_get_inventory_table_name())
         try:
             table.put_item(
                 Item={
@@ -147,7 +157,7 @@ class InventoryManager:
         Atomically reserve rooms using DynamoDB conditional writes.
         Returns {"success": True/False, "available": int, "message": str}
         """
-        table = self.dynamodb.Table(INVENTORY_TABLE)
+        table = self.dynamodb.Table(_get_inventory_table_name())
         self._initialize_inventory(property_id, event_date)
 
         try:
@@ -189,7 +199,7 @@ class InventoryManager:
 
     def release_rooms(self, property_id: str, event_date: str, num_rooms: int) -> bool:
         """Release previously reserved rooms (on cancellation/expiry)."""
-        table = self.dynamodb.Table(INVENTORY_TABLE)
+        table = self.dynamodb.Table(_get_inventory_table_name())
         try:
             table.update_item(
                 Key={"property_id": property_id, "date": event_date},
@@ -207,7 +217,7 @@ class InventoryManager:
 
     def hold_rooms(self, property_id: str, event_date: str, num_rooms: int) -> dict:
         """Place a temporary hold during negotiation (soft lock)."""
-        table = self.dynamodb.Table(INVENTORY_TABLE)
+        table = self.dynamodb.Table(_get_inventory_table_name())
         self._initialize_inventory(property_id, event_date)
 
         try:
@@ -235,7 +245,7 @@ class BookingQueue:
 
     def enqueue(self, booking_id: str, num_rooms: int, property_id: str, event_date: str, priority: int = 5) -> dict:
         """Add a large booking to the processing queue."""
-        table = self.dynamodb.Table(BOOKING_QUEUE_TABLE)
+        table = self.dynamodb.Table(_get_booking_queue_table_name())
         item = {
             "booking_id": booking_id,
             "property_id": property_id,

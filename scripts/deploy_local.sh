@@ -157,6 +157,7 @@ for FUNC in intake proposal_generator negotiation_agent notification reminder ti
     cp "$PROJECT_ROOT/lambdas/common/pricing_engine.py" /tmp/groupiq-$FUNC/
     cp "$PROJECT_ROOT/lambdas/common/calendar_data.py" /tmp/groupiq-$FUNC/
     cp "$PROJECT_ROOT/lambdas/common/market_data.py" /tmp/groupiq-$FUNC/
+    cp "$PROJECT_ROOT/lambdas/common/customer_intelligence.py" /tmp/groupiq-$FUNC/
     chmod 644 /tmp/groupiq-$FUNC/*.py
     cd /tmp/groupiq-$FUNC && zip -r /tmp/groupiq-$FUNC.zip . > /dev/null
 

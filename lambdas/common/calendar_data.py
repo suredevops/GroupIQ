@@ -66,6 +66,109 @@ MAJOR_EVENTS = {
     (11, 15): ("AWS re:Invent", 1.25),
 }
 
+# ─── Local Demand Events (India): Cricket, Festivals, Conferences ─────────────
+# IPL season dates, ICC events, major Indian festivals, and city-specific demand
+INDIA_DEMAND_EVENTS = {
+    # IPL Cricket Season (March-May) — massive hotel demand in host cities
+    (3, 22): ("IPL Season Opener", 1.35),
+    (3, 23): ("IPL Weekend Match", 1.30),
+    (3, 29): ("IPL Weekend Match", 1.30),
+    (3, 30): ("IPL Weekend Match", 1.30),
+    (4, 5): ("IPL Weekend Match", 1.28),
+    (4, 6): ("IPL Weekend Match", 1.28),
+    (4, 12): ("IPL Playoffs Week", 1.32),
+    (4, 13): ("IPL Playoffs", 1.35),
+    (4, 19): ("IPL Weekend Match", 1.28),
+    (4, 20): ("IPL Weekend Match", 1.28),
+    (4, 26): ("IPL Qualifier Week", 1.35),
+    (4, 27): ("IPL Qualifier", 1.38),
+    (5, 3): ("IPL Final Week", 1.40),
+    (5, 4): ("IPL Final", 1.45),
+    # ICC Cricket World Cup / Champions Trophy windows
+    (6, 1): ("ICC Champions Trophy", 1.30),
+    (6, 15): ("ICC Cricket Event", 1.28),
+    (10, 5): ("ICC T20 World Cup", 1.35),
+    (11, 1): ("ICC Test Series", 1.20),
+    # Major Indian Festivals (high travel demand)
+    (1, 14): ("Makar Sankranti / Pongal", 1.25),
+    (1, 26): ("Republic Day Weekend", 1.20),
+    (3, 25): ("Holi Festival", 1.25),
+    (4, 14): ("Baisakhi / Tamil New Year", 1.20),
+    (8, 15): ("Independence Day", 1.25),
+    (8, 26): ("Janmashtami", 1.15),
+    (9, 5): ("Ganesh Chaturthi", 1.20),
+    (10, 2): ("Gandhi Jayanti / Navratri Start", 1.25),
+    (10, 12): ("Dussehra", 1.30),
+    (10, 20): ("Karva Chauth", 1.15),
+    (11, 1): ("Diwali", 1.40),
+    (11, 2): ("Diwali (Day 2)", 1.35),
+    (11, 3): ("Bhai Dooj", 1.25),
+    (11, 15): ("Guru Nanak Jayanti", 1.15),
+    (12, 25): ("Christmas", 1.30),
+    # Wedding Season (Nov-Feb peak, Apr-Jun secondary)
+    (11, 20): ("Peak Wedding Season Start", 1.25),
+    (11, 25): ("Wedding Season Peak", 1.30),
+    (12, 1): ("Wedding Season High", 1.28),
+    (12, 10): ("Wedding Season", 1.25),
+    (1, 15): ("Winter Wedding Season", 1.22),
+    (2, 1): ("Wedding Season", 1.20),
+    # Corporate / Tech Conferences in India
+    (1, 10): ("CII Partnership Summit", 1.15),
+    (2, 20): ("Nasscom Tech Summit", 1.20),
+    (9, 15): ("TechSparks Bengaluru", 1.18),
+    (10, 15): ("Web Summit India", 1.20),
+    (12, 5): ("Economic Times Global Summit", 1.15),
+    # Function/Banquet demand spikes
+    (3, 1): ("Corporate FY-End Events", 1.20),
+    (3, 15): ("FY-End Conference Rush", 1.22),
+    (4, 1): ("New FY Kickoff Season", 1.18),
+}
+
+# Property-specific demand spikes (city + event combos)
+CITY_SPECIFIC_DEMAND = {
+    "HYD": {
+        (3, 22): ("IPL — SRH Home Match", 1.40),
+        (4, 6): ("IPL — SRH vs RCB", 1.38),
+        (4, 27): ("IPL Qualifier — Hyderabad", 1.42),
+        (12, 1): ("HITEC City Tech Week", 1.18),
+    },
+    "BLR": {
+        (3, 29): ("IPL — RCB Home Match", 1.40),
+        (4, 12): ("IPL — RCB Playoffs", 1.38),
+        (9, 15): ("TechSparks Bengaluru", 1.22),
+        (1, 5): ("Aero India Bengaluru", 1.25),
+    },
+    "BOM": {
+        (3, 23): ("IPL — MI Home Match", 1.42),
+        (4, 19): ("IPL — MI Derby", 1.38),
+        (5, 4): ("IPL Final — Wankhede", 1.50),
+        (11, 1): ("Diwali Mumbai Premium", 1.45),
+    },
+    "DEL": {
+        (1, 26): ("Republic Day — Delhi Premium", 1.35),
+        (3, 30): ("IPL — DC Home Match", 1.35),
+        (10, 15): ("Delhi Trade Fair", 1.22),
+    },
+    "NYC": {
+        (6, 15): ("NYC Pride Week", 1.20),
+        (9, 15): ("NY Fashion Week", 1.30),
+        (11, 25): ("Thanksgiving NYC", 1.35),
+        (12, 31): ("Times Square NYE", 1.55),
+    },
+    "MAA": {
+        (1, 14): ("Pongal — Chennai Premium", 1.30),
+        (4, 14): ("Tamil New Year — Chennai", 1.28),
+        (9, 5): ("Vinayagar Chaturthi Chennai", 1.20),
+    },
+    "GOA": {
+        (12, 20): ("Goa Christmas Rush", 1.40),
+        (12, 25): ("Goa Christmas Peak", 1.50),
+        (12, 31): ("Goa NYE Peak", 1.55),
+        (1, 6): ("Goa Epiphany / Kings Feast", 1.20),
+        (2, 14): ("Goa Carnival", 1.30),
+    },
+}
+
 # Lead time pricing tiers (days before event → multiplier)
 LEAD_TIME_TIERS = [
     (0, 7, 1.30),       # Last minute (0-7 days) — premium
@@ -106,6 +209,10 @@ def get_holiday_multiplier(event_date: date) -> tuple[float, str]:
         name, mult = MAJOR_EVENTS[key]
         return mult, f"Event: {name}"
 
+    if key in INDIA_DEMAND_EVENTS:
+        name, mult = INDIA_DEMAND_EVENTS[key]
+        return mult, f"Demand: {name}"
+
     # Check proximity to holidays (±2 days)
     for (m, d), (name, mult) in US_HOLIDAYS.items():
         try:
@@ -117,7 +224,45 @@ def get_holiday_multiplier(event_date: date) -> tuple[float, str]:
         except ValueError:
             continue
 
+    # Check proximity to India demand events (±1 day)
+    for (m, d), (name, mult) in INDIA_DEMAND_EVENTS.items():
+        try:
+            event = date(event_date.year, m, d)
+            diff = abs((event_date - event).days)
+            if 0 < diff <= 1:
+                proximity_mult = 1.0 + (mult - 1.0) * 0.6
+                return proximity_mult, f"Near {name} (±{diff}d)"
+        except ValueError:
+            continue
+
     return 1.0, "No holiday impact"
+
+
+def get_local_demand_multiplier(event_date: date, property_id: str) -> tuple[float, str]:
+    """
+    Check city-specific demand events (IPL matches, local festivals, conferences).
+    Returns higher multiplier if the property is in a city with a local event.
+    """
+    location = property_id.split("-")[1] if "-" in property_id else ""
+    key = (event_date.month, event_date.day)
+
+    city_events = CITY_SPECIFIC_DEMAND.get(location, {})
+    if key in city_events:
+        name, mult = city_events[key]
+        return mult, f"Local: {name}"
+
+    # Check ±1 day proximity for city events
+    for (m, d), (name, mult) in city_events.items():
+        try:
+            evt = date(event_date.year, m, d)
+            diff = abs((event_date - evt).days)
+            if 0 < diff <= 1:
+                prox_mult = 1.0 + (mult - 1.0) * 0.5
+                return prox_mult, f"Near {name} (±{diff}d)"
+        except ValueError:
+            continue
+
+    return 1.0, "No local demand impact"
 
 
 def get_lead_time_multiplier(event_date: date, booking_date: date = None) -> tuple[float, str]:

@@ -88,38 +88,41 @@ def get_negotiation_history(booking_id: str) -> list:
 
 def _local_mock_negotiation(booking: dict, counter_offer: dict) -> dict:
     """Mock negotiation logic for local development when Bedrock is unavailable."""
-    base_rate = float(booking.get("base_room_rate", 299))
-    floor_rate = base_rate * (1 - MAX_DISCOUNT_PERCENT / 100)
-    requested_rate = float(counter_offer.get("proposed_rate", counter_offer.get("requested_room_rate", base_rate)))
+    base_rate = float(booking.get("dynamic_room_rate", booking.get("base_room_rate", 299)))
+    requested_rate = float(counter_offer.get("proposed_rate", counter_offer.get("proposed_room_rate", counter_offer.get("requested_room_rate", base_rate))))
     discount_pct = round((1 - requested_rate / base_rate) * 100, 1)
 
-    if requested_rate >= floor_rate:
+    # Decision thresholds: ACCEPT >= $265, COUNTER $180-$265, ESCALATE < $180
+    accept_threshold = 265.0
+    escalate_threshold = 180.0
+
+    if requested_rate >= accept_threshold:
         return {
             "decision": "ACCEPT",
-            "rationale": f"Requested rate ${requested_rate}/night is within {discount_pct}% discount (max allowed: {MAX_DISCOUNT_PERCENT}%). Acceptable for {booking['num_rooms']} rooms over {booking['num_nights']} nights.",
+            "rationale": f"Requested rate ${requested_rate}/night is above acceptance threshold (${accept_threshold}). Acceptable for {booking.get('num_rooms', 0)} rooms over {booking.get('num_nights', 0)} nights.",
             "counter_proposal": None,
             "final_price": requested_rate,
             "discount_applied_percent": discount_pct,
-            "message_to_client": f"Great news! We're happy to accommodate your request at ${requested_rate}/night for {booking['num_rooms']} rooms. That's a {discount_pct}% discount — an excellent value for your {booking['event_type']}. We'll send the updated proposal shortly.",
+            "message_to_client": f"Great news! We're happy to accommodate your request at ${requested_rate:.0f}/night for {booking.get('num_rooms', 0)} rooms. That's a {discount_pct}% discount — an excellent value for your {booking.get('event_type', 'event')}. Your booking is now confirmed!",
         }
-    elif requested_rate >= floor_rate * 0.9:
-        compromise_rate = round((requested_rate + floor_rate) / 2, 2)
+    elif requested_rate >= escalate_threshold:
+        compromise_rate = round((requested_rate + accept_threshold) / 2, 2)
         return {
             "decision": "COUNTER",
-            "rationale": f"Requested rate ${requested_rate}/night exceeds maximum discount. Counter-proposing ${compromise_rate}/night as a compromise.",
+            "rationale": f"Requested rate ${requested_rate}/night is below acceptance threshold but above escalation. Counter-proposing ${compromise_rate}/night.",
             "counter_proposal": {"room_rate": compromise_rate, "includes_breakfast": True, "late_checkout": True},
             "final_price": compromise_rate,
             "discount_applied_percent": round((1 - compromise_rate / base_rate) * 100, 1),
-            "message_to_client": f"Thank you for your proposal. While we can't quite reach ${requested_rate}/night, we'd like to offer ${compromise_rate}/night with complimentary breakfast and late checkout included — adding over $5,000 in value to your group package.",
+            "message_to_client": f"Thank you for your proposal of ${requested_rate:.0f}/night. While we can't quite reach that rate, we'd like to offer ${compromise_rate:.0f}/night with complimentary breakfast and late checkout included — adding over $5,000 in value to your group package.",
         }
     else:
         return {
             "decision": "ESCALATE",
-            "rationale": f"Requested rate ${requested_rate}/night requires {discount_pct}% discount, significantly exceeding the {MAX_DISCOUNT_PERCENT}% maximum. Escalating to sales.",
+            "rationale": f"Requested rate ${requested_rate}/night is below minimum threshold (${escalate_threshold}). Requires manager approval.",
             "counter_proposal": None,
             "final_price": None,
             "discount_applied_percent": discount_pct,
-            "message_to_client": "We appreciate your interest! Given the scope of your request, our senior sales manager will reach out within 24 hours with a custom package tailored to your needs.",
+            "message_to_client": f"We appreciate your interest! Your proposed rate of ${requested_rate:.0f}/night requires approval from our senior sales manager. They will reach out within 24 hours with a custom package tailored to your needs.",
         }
 
 
@@ -646,8 +649,23 @@ def lambda_handler(event, context):
     # Check property availability in the location
     availability = check_property_availability(booking)
 
+    # If accepted and was an inquiry (INQ-), generate a confirmed booking ID (GRP-)
+    confirmed_booking_id = None
+    if negotiation_result["decision"] == "ACCEPT" and booking_id.startswith("INQ-"):
+        confirmed_booking_id = "GRP-" + booking_id[4:]
+        try:
+            table.update_item(
+                Key={"booking_id": booking_id, "version": int(booking["version"])},
+                UpdateExpression="SET confirmed_booking_id = :cbid",
+                ExpressionAttributeValues={":cbid": confirmed_booking_id},
+            )
+        except Exception:
+            pass
+
     response_payload = {
         "booking_id": booking_id,
+        "inquiry_id": booking_id,
+        "confirmed_booking_id": confirmed_booking_id,
         "decision": negotiation_result["decision"],
         "message_to_client": negotiation_result["message_to_client"],
         "counter_proposal": negotiation_result.get("counter_proposal"),

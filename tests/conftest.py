@@ -35,6 +35,9 @@ def aws_env(monkeypatch):
     monkeypatch.setenv("ESCALATION_TOPIC_ARN", "arn:aws:sns:us-east-1:123456789012:groupiq-escalation-test")
     monkeypatch.setenv("SES_SENDER_EMAIL", "test@groupiq.local")
     monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("INVENTORY_TABLE", "groupiq-inventory-test")
+    monkeypatch.setenv("BOOKING_QUEUE_TABLE", "groupiq-booking-queue-test")
+    monkeypatch.setenv("LARGE_BOOKING_THRESHOLD", "100")
 
 
 @pytest.fixture

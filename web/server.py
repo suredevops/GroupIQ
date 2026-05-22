@@ -9,6 +9,9 @@ import urllib.parse
 import os
 import sys
 import threading
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -21,8 +24,8 @@ REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "local")
 PORT = int(os.environ.get("PORT", "5555"))
 
-# SMTP configuration for sending real emails (Outlook/Office365)
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.office365.com")
+# SMTP configuration for sending real emails (Gmail)
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
@@ -48,6 +51,127 @@ if smtp_configured:
 else:
     print(f"[GroupIQ] SMTP not configured — emails will be logged to console only")
     print(f"[GroupIQ] To enable real emails, set: SMTP_USERNAME, SMTP_PASSWORD, SES_SENDER_EMAIL")
+
+
+def send_email(to_email, subject, html_body):
+    """Send a real email via Gmail SMTP. Returns True on success."""
+    sender = SES_SENDER_EMAIL or SMTP_USERNAME
+    if not smtp_configured:
+        print(f"[EMAIL-LOG] To: {to_email} | Subject: {subject}")
+        print(f"[EMAIL-LOG] (Not sent — SMTP not configured)")
+        return False
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"GroupIQ Marriott <{sender}>"
+        msg["To"] = to_email
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.sendmail(sender, to_email, msg.as_string())
+
+        print(f"[EMAIL-SENT] To: {to_email} | Subject: {subject}")
+        return True
+    except Exception as e:
+        print(f"[EMAIL-ERROR] Failed to send to {to_email}: {e}")
+        return False
+
+
+def build_inquiry_email(inquiry_id, contact_name, event_type, checkin, checkout, rooms, nights, rate, revenue, property_id):
+    """Build HTML email for inquiry confirmation."""
+    return f"""
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; background: #f8fafc;">
+        <div style="background: white; border-radius: 12px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #1e293b; font-size: 22px; margin: 0;">Marriott | GroupIQ</h1>
+                <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Group Booking Confirmation</p>
+            </div>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+            <p style="color: #334155; font-size: 15px;">Dear <strong>{contact_name}</strong>,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.7;">
+                Your group booking inquiry has been received and is being processed by our revenue management team.
+            </p>
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <h3 style="color: #1e40af; font-size: 14px; margin: 0 0 12px 0; text-transform: uppercase; letter-spacing: 0.5px;">Inquiry Details</h3>
+                <table style="width: 100%; font-size: 13px; color: #334155;">
+                    <tr><td style="padding: 6px 0;"><strong>Inquiry ID:</strong></td><td style="color: #1e40af; font-weight: 700;">{inquiry_id}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Event Type:</strong></td><td>{event_type}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Property:</strong></td><td>{property_id}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Check-in:</strong></td><td>{checkin}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Check-out:</strong></td><td>{checkout}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Rooms:</strong></td><td>{rooms}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Nights:</strong></td><td>{nights}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Rate/Night:</strong></td><td style="font-weight: 700;">${rate:.0f}</td></tr>
+                    <tr><td style="padding: 6px 0;"><strong>Estimated Revenue:</strong></td><td style="font-weight: 700; color: #059669;">${revenue:,.0f}</td></tr>
+                </table>
+            </div>
+            <p style="color: #475569; font-size: 14px; line-height: 1.7;">
+                Our team will prepare a customized proposal within <strong>24 hours</strong>. You can track your inquiry status
+                anytime at the <a href="http://localhost:5555/customer.html" style="color: #1e40af;">GroupIQ Customer Portal</a>.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+            <p style="color: #94a3b8; font-size: 11px; text-align: center;">
+                Marriott GroupIQ | Group Booking Intelligence Platform<br>
+                This is an automated notification. Do not reply to this email.
+            </p>
+        </div>
+    </div>
+    """
+
+
+def build_negotiation_email(inquiry_id, contact_name, decision, message, counter_rate=None, confirmed_id=None):
+    """Build HTML email for negotiation response."""
+    decision_color = {"ACCEPT": "#059669", "COUNTER": "#d97706", "ESCALATE": "#dc2626"}.get(decision, "#64748b")
+    decision_label = {"ACCEPT": "ACCEPTED", "COUNTER": "COUNTER OFFER", "ESCALATE": "ESCALATED"}.get(decision, decision)
+
+    extra = ""
+    if decision == "ACCEPT" and confirmed_id:
+        extra = f"""
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; padding: 20px; margin: 16px 0; text-align: center;">
+            <p style="font-weight: 700; color: #059669; font-size: 16px; margin: 0;">Booking Confirmed!</p>
+            <p style="margin-top: 8px; font-size: 20px; font-weight: 800; color: #065f46;">{confirmed_id}</p>
+        </div>
+        """
+    elif decision == "COUNTER" and counter_rate:
+        extra = f"""
+        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 20px; margin: 16px 0;">
+            <p style="font-weight: 600; color: #92400e; font-size: 14px; margin: 0;">Counter Proposal: <strong>${counter_rate}/night</strong></p>
+            <p style="color: #78716c; font-size: 12px; margin-top: 6px;">You can accept this rate or submit another counter-offer.</p>
+        </div>
+        """
+
+    return f"""
+    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; background: #f8fafc;">
+        <div style="background: white; border-radius: 12px; padding: 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="color: #1e293b; font-size: 22px; margin: 0;">Marriott | GroupIQ</h1>
+                <p style="color: #64748b; font-size: 13px; margin-top: 4px;">Negotiation Update</p>
+            </div>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+            <p style="color: #334155; font-size: 15px;">Dear <strong>{contact_name}</strong>,</p>
+            <p style="color: #475569; font-size: 14px; line-height: 1.7;">
+                We have reviewed your counter-offer for inquiry <strong style="color: #1e40af;">{inquiry_id}</strong>.
+            </p>
+            <div style="text-align: center; margin: 20px 0;">
+                <span style="background: {decision_color}; color: white; padding: 8px 24px; border-radius: 20px; font-size: 13px; font-weight: 700; letter-spacing: 0.5px;">{decision_label}</span>
+            </div>
+            <p style="color: #475569; font-size: 14px; line-height: 1.7; background: #f8fafc; padding: 16px; border-radius: 8px; border-left: 4px solid {decision_color};">
+                {message}
+            </p>
+            {extra}
+            <p style="color: #475569; font-size: 14px; line-height: 1.7;">
+                Visit the <a href="http://localhost:5555/customer.html" style="color: #1e40af;">GroupIQ Customer Portal</a> to continue.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+            <p style="color: #94a3b8; font-size: 11px; text-align: center;">
+                Marriott GroupIQ | Group Booking Intelligence Platform
+            </p>
+        </div>
+    </div>
+    """
 
 WEB_DIR = Path(__file__).parent
 
@@ -191,6 +315,8 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             elif self.path.startswith("/bookings/"):
                 booking_id = self.path.split("/bookings/")[1]
                 self._handle_get_booking(booking_id)
+            elif self.path.startswith("/customer/bookings"):
+                self._handle_customer_bookings()
             elif self.path == "/reminders" or self.path.startswith("/reminders?"):
                 self._handle_check_reminders()
             elif self.path == "/compliance/rules":
@@ -226,6 +352,11 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
 
             if self.path == "/inquiries":
                 self._handle_new_inquiry(body)
+            elif self.path == "/customer/inquiries":
+                self._handle_new_inquiry(body)
+            elif "/customer/inquiries/" in self.path and "/negotiate" in self.path:
+                parts = self.path.split("/customer/inquiries/")[1].split("/negotiate")[0]
+                self._handle_negotiate(parts, body)
             elif "/negotiate" in self.path:
                 parts = self.path.split("/")
                 booking_id = parts[2] if len(parts) >= 3 else ""
@@ -269,6 +400,58 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 self._json_response(200, {"bookings": backed_up, "count": len(backed_up), "source": "backup"})
             else:
                 self._json_response(500, {"error": str(e)})
+
+    def _handle_customer_bookings(self):
+        """Get bookings filtered by customer email — customer portal endpoint."""
+        try:
+            query = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(query)
+            email = params.get("email", [""])[0].lower().strip()
+
+            if not email:
+                self._json_response(400, {"error": "Email parameter required"})
+                return
+
+            table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+            response = table.scan()
+            items = response.get("Items", [])
+
+            # Filter by customer email
+            customer_items = [i for i in items if i.get("contact_email", "").lower() == email]
+
+            # Also check backup
+            backed_up = backup.get_all_bookings()
+            backup_items = [b for b in backed_up if b.get("contact_email", "").lower() == email]
+
+            # Merge (prefer DynamoDB, fallback backup)
+            all_items = {}
+            for item in backup_items + customer_items:
+                bid = item.get("booking_id", "")
+                if bid:
+                    existing = all_items.get(bid)
+                    if not existing or int(item.get("version", 0)) >= int(existing.get("version", 0)):
+                        all_items[bid] = item
+
+            bookings = sorted(all_items.values(), key=lambda x: x.get("created_at", ""), reverse=True)
+            clean = json.loads(json.dumps(bookings, default=str))
+
+            # Send communication log
+            comms = []
+            for b in clean:
+                status = b.get("status", "")
+                bid = b.get("booking_id", "")
+                if status == "INQUIRY_RECEIVED":
+                    comms.append({"booking_id": bid, "type": "email", "message": f"Inquiry {bid} received. Our team is preparing a proposal.", "timestamp": b.get("created_at")})
+                elif status == "PROPOSAL_SENT":
+                    comms.append({"booking_id": bid, "type": "email", "message": f"A proposal for {bid} has been sent to your email.", "timestamp": b.get("updated_at")})
+                elif status == "ACCEPTED":
+                    comms.append({"booking_id": bid, "type": "email", "message": f"Booking {bid} is CONFIRMED! Check your email for details.", "timestamp": b.get("updated_at")})
+                elif status == "NEGOTIATING":
+                    comms.append({"booking_id": bid, "type": "email", "message": f"Counter-offer received for {bid}. Awaiting hotel response.", "timestamp": b.get("updated_at")})
+
+            self._json_response(200, {"bookings": clean, "count": len(clean), "communications": comms})
+        except Exception as e:
+            self._json_response(500, {"error": str(e)})
 
     def _handle_bookings_report(self):
         """Return booking analytics filtered by period (week/month/year/all)."""
@@ -326,6 +509,31 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 booking_data["estimated_revenue"] = response_body.get("estimated_revenue", 0)
                 backup.upsert_booking(booking_data)
 
+            # Send real email notification for inquiry confirmation
+            if response_body.get("booking_id"):
+                parsed = json.loads(body)
+                to_email = parsed.get("contact_email", "")
+                pricing = response_body.get("dynamic_pricing", {})
+                if to_email:
+                    email_html = build_inquiry_email(
+                        inquiry_id=response_body.get("inquiry_id", response_body["booking_id"]),
+                        contact_name=parsed.get("contact_name", "Guest"),
+                        event_type=parsed.get("event_type", ""),
+                        checkin=parsed.get("check_in_date", parsed.get("event_date", "")),
+                        checkout=parsed.get("check_out_date", ""),
+                        rooms=parsed.get("num_rooms", 0),
+                        nights=parsed.get("num_nights", 0),
+                        rate=float(pricing.get("final_rate", 0)),
+                        revenue=float(response_body.get("estimated_revenue", 0)),
+                        property_id=parsed.get("property_id", ""),
+                    )
+                    email_sent = send_email(
+                        to_email,
+                        f"GroupIQ - Inquiry {response_body.get('inquiry_id', response_body['booking_id'])} Confirmed",
+                        email_html,
+                    )
+                    response_body["email_delivered"] = email_sent
+
             self._json_response(result.get("statusCode", 201), response_body)
         except Exception as e:
             self._json_response(500, {"error": str(e)})
@@ -343,15 +551,42 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             else:
                 response_data = result
 
-            # Send real email via SMTP if configured
-            if smtp_configured and response_data.get("email_sent"):
+            # Send real email notification for negotiation result
+            decision = response_data.get("decision", "")
+            if decision:
+                # Look up the booking to get customer email
                 try:
-                    self._send_smtp_email(booking_id, response_data)
-                    response_data["real_email_delivered"] = True
+                    table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                    scan = table.scan()
+                    booking = next((b for b in scan.get("Items", []) if b.get("booking_id") == booking_id), None)
+                    if booking:
+                        to_email = booking.get("contact_email", "")
+                        contact_name = booking.get("contact_name", "Guest")
+                        counter_rate = None
+                        if response_data.get("counter_proposal"):
+                            counter_rate = response_data["counter_proposal"].get("room_rate")
+                        email_html = build_negotiation_email(
+                            inquiry_id=booking_id,
+                            contact_name=contact_name,
+                            decision=decision,
+                            message=response_data.get("message_to_client", ""),
+                            counter_rate=counter_rate,
+                            confirmed_id=response_data.get("confirmed_booking_id"),
+                        )
+                        subject_map = {
+                            "ACCEPT": f"GroupIQ - Booking CONFIRMED! {booking_id}",
+                            "COUNTER": f"GroupIQ - Counter Offer for {booking_id}",
+                            "ESCALATE": f"GroupIQ - Escalated: {booking_id}",
+                        }
+                        email_sent = send_email(
+                            to_email,
+                            subject_map.get(decision, f"GroupIQ - Update on {booking_id}"),
+                            email_html,
+                        )
+                        response_data["email_delivered"] = email_sent
                 except Exception as email_err:
-                    response_data["real_email_delivered"] = False
-                    response_data["email_error"] = str(email_err)
-                    print(f"[GroupIQ] SMTP email error: {email_err}")
+                    print(f"[GroupIQ] Negotiation email error: {email_err}")
+                    response_data["email_delivered"] = False
 
             self._json_response(200, response_data)
         except Exception as e:

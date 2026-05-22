@@ -15,6 +15,7 @@ sys.path.insert(0, "/opt/python")
 from utils import (
     build_response,
     generate_booking_id,
+    generate_inquiry_id,
     utc_now_iso,
     get_dynamodb_resource,
     BookingStatus,
@@ -114,7 +115,7 @@ def handle_new_inquiry(event):
     if errors:
         return build_response(400, {"errors": errors})
 
-    booking_id = generate_booking_id()
+    booking_id = generate_inquiry_id()
     pricing_rules = get_base_pricing(body["property_id"])
 
     base_room_rate = float(pricing_rules.get("room_rate", {}).get("base_rate", 250))
@@ -132,6 +133,8 @@ def handle_new_inquiry(event):
         property_id=body["property_id"],
         num_rooms=num_rooms,
         num_nights=num_nights,
+        customer_email=body.get("contact_email", ""),
+        event_type=body.get("event_type", ""),
     )
 
     dynamic_rate = dynamic_pricing["final_rate"]
@@ -146,8 +149,8 @@ def handle_new_inquiry(event):
         "contact_phone": body.get("contact_phone", ""),
         "company_name": body.get("company_name", ""),
         "event_type": body["event_type"],
-        "event_date": body["event_date"],
-        "event_end_date": body.get("event_end_date", ""),
+        "event_date": body.get("check_in_date", body["event_date"]),
+        "event_end_date": body.get("check_out_date", body.get("event_end_date", "")),
         "num_rooms": num_rooms,
         "num_nights": num_nights,
         "property_id": body["property_id"],
@@ -226,9 +229,19 @@ def handle_new_inquiry(event):
             input=json.dumps({"booking_id": booking_id, "version": 1}),
         )
 
+    # Simulated email notification for inquiry confirmation
+    notification = {
+        "type": "email",
+        "to": body["contact_email"],
+        "subject": f"GroupIQ - Inquiry {booking_id} Received",
+        "message": f"Dear {body['contact_name']}, your group booking inquiry ({booking_id}) for {num_rooms} rooms has been received. Our team will prepare a proposal within 24 hours.",
+        "sent_at": utc_now_iso(),
+    }
+
     return build_response(201, {
         "message": "Group booking inquiry received",
         "booking_id": booking_id,
+        "inquiry_id": booking_id,
         "estimated_revenue": estimated_revenue,
         "status": booking_record["status"],
         "tipai_compliance": tipai_result.get("overall_compliance", "PENDING"),
@@ -242,11 +255,13 @@ def handle_new_inquiry(event):
             "revenue_summary": dynamic_pricing["revenue_summary"],
             "explanation": dynamic_pricing["pricing_explanation"],
         },
+        "customer_intelligence": dynamic_pricing.get("customer_intelligence"),
         "concurrency": {
             "rooms_held": hold_result.get("held", 0) if hold_result else 0,
             "is_large_booking": queue.is_large_booking(num_rooms),
             "queued": queue_result.get("queued", False) if queue_result else False,
         },
+        "notification": notification,
     })
 
 

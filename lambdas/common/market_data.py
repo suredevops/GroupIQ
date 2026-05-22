@@ -1,9 +1,44 @@
 """
 GroupIQ Market Data Simulator — Generates deterministic occupancy and competitor rates.
 Uses seeded hashing so the same date always produces the same values (consistency across calls).
+
+Includes:
+- Marriott pricing strategies (BAR, BRG, Revenue Management)
+- Competitor benchmark pricing (Hilton, Hyatt, ITC, Taj, Oberoi)
+- Occupancy-based dynamic pricing
+- Group size & length-of-stay discounts
 """
 import hashlib
 from datetime import date
+
+
+# ─── Marriott Pricing Strategy (BAR = Best Available Rate) ─────────────────────
+# Marriott uses a tiered rate strategy:
+#   BAR (Best Available Rate) — standard dynamic rate
+#   BRG (Best Rate Guarantee) — lowest public rate matched
+#   Group Rate — negotiated for 10+ rooms
+#   Corporate Rate — contracted annual rate for businesses
+#   Government Rate — fixed rate for govt bookings
+
+MARRIOTT_RATE_STRATEGIES = {
+    "BAR": {"label": "Best Available Rate", "base_multiplier": 1.00},
+    "PREMIUM": {"label": "Peak/Event Premium", "base_multiplier": 1.15},
+    "VALUE": {"label": "Value Season Rate", "base_multiplier": 0.88},
+    "CORPORATE": {"label": "Corporate Contract Rate", "base_multiplier": 0.85},
+    "GOVERNMENT": {"label": "Government Rate", "base_multiplier": 0.75},
+}
+
+# Competitor hotel brands with their typical rate positioning vs Marriott
+COMPETITOR_BRANDS = {
+    "Hilton": {"rate_vs_marriott": 0.97, "brand_tier": "full-service"},
+    "Hyatt": {"rate_vs_marriott": 1.03, "brand_tier": "full-service"},
+    "ITC Hotels": {"rate_vs_marriott": 1.05, "brand_tier": "luxury-india"},
+    "Taj Hotels": {"rate_vs_marriott": 1.10, "brand_tier": "luxury-india"},
+    "Oberoi": {"rate_vs_marriott": 1.15, "brand_tier": "luxury-india"},
+    "Radisson": {"rate_vs_marriott": 0.88, "brand_tier": "upper-midscale"},
+    "Holiday Inn": {"rate_vs_marriott": 0.80, "brand_tier": "midscale"},
+    "Lemon Tree": {"rate_vs_marriott": 0.65, "brand_tier": "midscale-india"},
+}
 
 
 def _date_hash(event_date: date, property_id: str, seed: str = "") -> float:
@@ -63,39 +98,105 @@ def get_occupancy_rate(event_date: date, property_id: str) -> tuple[float, float
 def get_competitor_rate(base_rate: float, event_date: date, property_id: str) -> tuple[float, float, str]:
     """
     Simulate competitor hotel rates based on ±15% variance from base.
+    Incorporates Marriott's revenue management positioning against known competitors.
     Returns: (competitor_rate, adjustment_multiplier, description)
-    
-    If competitors are higher, we can price up slightly.
-    If competitors are lower, we adjust down to stay competitive.
     """
     variance_factor = _date_hash(event_date, property_id, "competitor")
 
-    # Competitor variance: -15% to +15% from our base
-    variance_pct = (variance_factor - 0.5) * 0.30  # ±15%
-    competitor_rate = base_rate * (1.0 + variance_pct)
+    # Determine which competitor set to benchmark against
+    location = property_id.split("-")[1] if "-" in property_id else "NYC"
+    india_locations = {"HYD", "BLR", "BOM", "DEL", "MAA", "GOA", "JAI", "PNQ", "CCU"}
 
-    # Our adjustment based on competitor positioning
+    if location in india_locations:
+        competitors = ["ITC Hotels", "Taj Hotels", "Oberoi", "Hyatt", "Radisson"]
+    else:
+        competitors = ["Hilton", "Hyatt", "Radisson", "Holiday Inn"]
+
+    # Pick a primary competitor based on date hash
+    competitor_idx = int(variance_factor * len(competitors)) % len(competitors)
+    primary_competitor = competitors[competitor_idx]
+    comp_positioning = COMPETITOR_BRANDS[primary_competitor]["rate_vs_marriott"]
+
+    # Competitor variance: positioned relative to Marriott with ±8% daily fluctuation
+    daily_variance = (variance_factor - 0.5) * 0.16
+    competitor_rate = base_rate * comp_positioning * (1.0 + daily_variance)
+
+    # Marriott's response strategy (never undercut by >5%, capture upside at 3%)
     if competitor_rate > base_rate * 1.10:
-        # Competitors are 10%+ higher — we can push our rate up
         multiplier = 1.05
-        label = f"Competitors higher (${competitor_rate:.0f}/night) — rate opportunity"
+        label = f"{primary_competitor} higher (${competitor_rate:.0f}) — Marriott premium opportunity"
     elif competitor_rate > base_rate * 1.03:
-        # Competitors slightly higher
         multiplier = 1.02
-        label = f"Competitors at ${competitor_rate:.0f}/night — slight premium"
+        label = f"{primary_competitor} at ${competitor_rate:.0f} — slight premium"
     elif competitor_rate < base_rate * 0.90:
-        # Competitors are 10%+ lower — we need to adjust down
         multiplier = 0.95
-        label = f"Competitors lower (${competitor_rate:.0f}/night) — competitive adjustment"
+        label = f"{primary_competitor} lower (${competitor_rate:.0f}) — BRG competitive match"
     elif competitor_rate < base_rate * 0.97:
-        # Competitors slightly lower
         multiplier = 0.98
-        label = f"Competitors at ${competitor_rate:.0f}/night — minor adjustment"
+        label = f"{primary_competitor} at ${competitor_rate:.0f} — rate parity adjustment"
     else:
         multiplier = 1.00
-        label = f"Competitors aligned (${competitor_rate:.0f}/night)"
+        label = f"{primary_competitor} aligned (${competitor_rate:.0f}) — BAR maintained"
 
     return competitor_rate, multiplier, label
+
+
+def get_marriott_strategy_multiplier(event_date: date, property_id: str, event_type: str = "") -> tuple[float, str]:
+    """
+    Apply Marriott-specific pricing strategy based on demand signals.
+    Implements BAR (Best Available Rate) revenue management rules.
+    """
+    hash_val = _date_hash(event_date, property_id, "strategy")
+    location = property_id.split("-")[1] if "-" in property_id else ""
+
+    # Determine demand level from multiple signals
+    demand_score = 0.0
+
+    # Season-based demand (India wedding/cricket vs US convention season)
+    india_locations = {"HYD", "BLR", "BOM", "DEL", "MAA", "GOA", "JAI", "PNQ", "CCU"}
+    if location in india_locations:
+        # India: Oct-Feb = wedding season, Mar-May = IPL, Jun-Sep = monsoon low
+        if event_date.month in (11, 12, 1, 2):
+            demand_score += 0.30
+        elif event_date.month in (3, 4, 5):
+            demand_score += 0.25
+        elif event_date.month in (6, 7, 8):
+            demand_score -= 0.15
+    else:
+        # US: Sep-Nov = conference, Jun-Aug = leisure, Jan = low
+        if event_date.month in (9, 10, 11):
+            demand_score += 0.25
+        elif event_date.month in (6, 7, 8):
+            demand_score += 0.15
+        elif event_date.month == 1:
+            demand_score -= 0.10
+
+    # Weekend vs weekday corporate demand
+    if event_date.weekday() >= 4:
+        demand_score += 0.10
+
+    # Deterministic random factor for market noise
+    demand_score += (hash_val - 0.5) * 0.15
+
+    # Marriott strategy decision
+    if demand_score >= 0.35:
+        strategy = "PREMIUM"
+        multiplier = 1.08
+        label = f"Marriott Premium Rate — Very high demand period"
+    elif demand_score >= 0.15:
+        strategy = "BAR"
+        multiplier = 1.03
+        label = f"Marriott BAR — Above-average demand"
+    elif demand_score <= -0.10:
+        strategy = "VALUE"
+        multiplier = 0.95
+        label = f"Marriott Value Rate — Low demand, stimulate bookings"
+    else:
+        strategy = "BAR"
+        multiplier = 1.00
+        label = f"Marriott BAR — Standard demand"
+
+    return multiplier, label
 
 
 def get_group_size_multiplier(num_rooms: int) -> tuple[float, str]:
