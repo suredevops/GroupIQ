@@ -218,8 +218,16 @@ class BookingBackup:
                 if not bid:
                     continue
                 existing = self._data["bookings"].get(bid)
-                if not existing or int(item.get("version", 0)) >= int(existing.get("version", 0)):
+                if not existing:
                     self._data["bookings"][bid] = json.loads(json.dumps(item, default=str))
+                elif int(item.get("version", 0)) > int(existing.get("version", 0)):
+                    self._data["bookings"][bid] = json.loads(json.dumps(item, default=str))
+                elif int(item.get("version", 0)) == int(existing.get("version", 0)):
+                    # Same version — keep whichever has a more recent updated_at
+                    item_ts = item.get("updated_at", "")
+                    existing_ts = existing.get("updated_at", "")
+                    if item_ts >= existing_ts:
+                        self._data["bookings"][bid] = json.loads(json.dumps(item, default=str))
             self._save()
 
     def get_all_bookings(self) -> list:
@@ -374,13 +382,13 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 pass
 
     def _handle_get_bookings(self):
-        """Scan all bookings from DynamoDB and sync to backup."""
+        """Scan all bookings from DynamoDB and merge with backup for accuracy."""
         try:
             table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
             response = table.scan()
             items = response.get("Items", [])
 
-            # Sync all items to permanent backup
+            # Sync DynamoDB items to backup (respects updated_at for same version)
             backup.sync_from_dynamodb(items)
 
             # Deduplicate by booking_id (keep latest version)
@@ -389,6 +397,20 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 bid = item["booking_id"]
                 if bid not in latest or int(item["version"]) > int(latest[bid]["version"]):
                     latest[bid] = item
+
+            # Merge with backup — backup may have more recent status from server-side updates
+            backed_up = backup.get_all_bookings()
+            for b in backed_up:
+                bid = b.get("booking_id", "")
+                if not bid:
+                    continue
+                if bid not in latest:
+                    latest[bid] = b
+                else:
+                    existing = latest[bid]
+                    if int(b.get("version", 0)) == int(existing.get("version", 0)):
+                        if b.get("updated_at", "") > existing.get("updated_at", ""):
+                            latest[bid] = b
 
             bookings = sorted(latest.values(), key=lambda x: x.get("created_at", ""), reverse=True)
             clean = json.loads(json.dumps(bookings, default=str))
@@ -560,6 +582,28 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     scan = table.scan()
                     booking = next((b for b in scan.get("Items", []) if b.get("booking_id") == booking_id), None)
                     if booking:
+                        # Ensure DynamoDB status is updated (Lambda's conditional write can silently fail)
+                        new_status = response_data.get("status", decision)
+                        now_ts = datetime.now(timezone.utc).isoformat()
+                        try:
+                            table.update_item(
+                                Key={"booking_id": booking_id, "version": int(booking["version"])},
+                                UpdateExpression="SET #s = :status, updated_at = :ts",
+                                ExpressionAttributeNames={"#s": "status"},
+                                ExpressionAttributeValues={
+                                    ":status": new_status,
+                                    ":ts": now_ts,
+                                },
+                            )
+                        except Exception as db_err:
+                            print(f"[GroupIQ] DynamoDB status update error: {db_err}")
+
+                        # Sync updated status to backup so admin portal reflects it
+                        booking_updated = dict(booking)
+                        booking_updated["status"] = new_status
+                        booking_updated["updated_at"] = now_ts
+                        backup.upsert_booking(booking_updated)
+
                         to_email = booking.get("contact_email", "")
                         contact_name = booking.get("contact_name", "Guest")
                         counter_rate = None
@@ -577,6 +621,7 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             "ACCEPT": f"GroupIQ - Booking CONFIRMED! {booking_id}",
                             "COUNTER": f"GroupIQ - Counter Offer for {booking_id}",
                             "ESCALATE": f"GroupIQ - Escalated: {booking_id}",
+                            "DECLINED": f"GroupIQ - Booking Declined: {booking_id}",
                         }
                         email_sent = send_email(
                             to_email,

@@ -633,14 +633,26 @@ def lambda_handler(event, context):
                 ":accepted_status": BookingStatus.ACCEPTED,
             },
         )
-    except Exception:
-        # Another request already accepted this booking
+    except Exception as update_err:
         if negotiation_result["decision"] == "ACCEPT":
             return build_response(409, {
                 "booking_id": booking_id,
                 "error": "CONFLICT",
                 "message": "This booking was already accepted by another concurrent request.",
             })
+        # For non-ACCEPT decisions, retry without conditional expression
+        try:
+            table.update_item(
+                Key={"booking_id": booking_id, "version": int(booking["version"])},
+                UpdateExpression="SET #s = :status, updated_at = :ts",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues={
+                    ":status": new_status,
+                    ":ts": utc_now_iso(),
+                },
+            )
+        except Exception as retry_err:
+            print(f"[GroupIQ] Failed to update status for {booking_id}: {retry_err}")
 
     if negotiation_result["decision"] == "ESCALATE":
         escalate_to_sales(booking, negotiation_result)
