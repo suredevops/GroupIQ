@@ -993,9 +993,11 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps(data, default=str).encode("utf-8"))
 
     def _cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Credentials", "true")
 
     def log_message(self, format, *args):
         try:

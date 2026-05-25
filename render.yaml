@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: groupiq-api
+    runtime: python
+    buildCommand: pip install -r web/requirements.txt
+    startCommand: cd web && python server.py
+    envVars:
+      - key: PORT
+        value: "5555"
+      - key: ENVIRONMENT
+        value: "production"
+      - key: PYTHON_VERSION
+        value: "3.11"
+    plan: free
+    autoDeploy: true

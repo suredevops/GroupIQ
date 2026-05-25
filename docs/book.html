@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GroupIQ — Book a Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; color: #1e293b; min-height: 100vh; }
+
+        .header { background: white; padding: 16px 40px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-bottom: 1px solid #e2e8f0; }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-right { display: flex; align-items: center; gap: 14px; }
+        .header-right a { font-size: 13px; color: #1e40af; text-decoration: none; font-weight: 500; }
+        .header-right a:hover { text-decoration: underline; }
+
+        .hero { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #1e40af 100%); color: white; padding: 60px 40px; text-align: center; }
+        .hero h1 { font-size: 36px; font-weight: 800; margin-bottom: 12px; }
+        .hero p { font-size: 16px; opacity: 0.9; max-width: 600px; margin: 0 auto; line-height: 1.6; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+
+        .section-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; color: #1e293b; }
+        .section-sub { font-size: 14px; color: #64748b; margin-bottom: 28px; }
+
+        .locations-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; margin-bottom: 40px; }
+        .location-card { background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 22px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
+        .location-card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-color: #bfdbfe; }
+        .location-card.selected { border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,0.15); }
+        .location-card .city { font-size: 18px; font-weight: 700; color: #1e293b; }
+        .location-card .country { font-size: 12px; color: #64748b; margin-top: 2px; }
+        .location-card .props { font-size: 12px; color: #1e40af; font-weight: 600; margin-top: 10px; }
+
+        .properties-section { display: none; margin-bottom: 40px; }
+        .properties-section.show { display: block; animation: fadeIn 0.3s ease; }
+        .properties-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+        .property-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.2s; }
+        .property-card:hover { border-color: #bfdbfe; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+        .property-card.selected { border-color: #1e40af; background: #eff6ff; }
+        .property-card .name { font-size: 15px; font-weight: 700; color: #1e293b; }
+        .property-card .brand { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
+        .property-card .address { font-size: 12px; color: #475569; margin-top: 8px; line-height: 1.4; }
+        .property-card .rooms-info { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .property-card .room-tag { font-size: 10px; padding: 3px 8px; border-radius: 5px; background: #f1f5f9; color: #475569; font-weight: 500; }
+        .property-card .avail { font-size: 12px; color: #059669; font-weight: 600; margin-top: 8px; }
+
+        .booking-form { display: none; background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; margin-top: 30px; }
+        .booking-form.show { display: block; animation: fadeIn 0.3s ease; }
+        .booking-form h2 { font-size: 20px; font-weight: 700; margin-bottom: 24px; color: #1e293b; display: flex; align-items: center; gap: 10px; }
+        .booking-form h2::before { content: ''; width: 4px; height: 22px; background: linear-gradient(180deg, #1e40af, #3b82f6); border-radius: 2px; }
+
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-size: 12px; font-weight: 600; margin-bottom: 6px; color: #475569; text-transform: uppercase; letter-spacing: 0.3px; }
+        .form-group input, .form-group select, .form-group textarea { padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 9px; font-size: 14px; font-family: inherit; background: white; color: #1e293b; transition: all 0.2s; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,0.08); }
+        .form-group input::placeholder, .form-group textarea::placeholder { color: #94a3b8; }
+        .form-full { grid-column: 1 / -1; }
+
+        .btn { padding: 13px 28px; border: none; border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.2px; }
+        .btn-primary { background: #1e40af; color: white; box-shadow: 0 2px 8px rgba(30,64,175,0.2); }
+        .btn-primary:hover { background: #1e3a8a; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(30,64,175,0.3); }
+        .btn-secondary { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+        .btn-secondary:hover { background: #f1f5f9; }
+
+        .actions { display: flex; gap: 12px; margin-top: 24px; }
+
+        .nights-display { font-size: 13px; color: #1e40af; font-weight: 600; margin-top: 5px; }
+
+        .result-panel { display: none; margin-top: 24px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 14px; padding: 28px; }
+        .result-panel.show { display: block; animation: fadeIn 0.3s ease; }
+        .result-panel h3 { font-size: 18px; color: #065f46; margin-bottom: 12px; }
+        .result-panel .booking-id { font-size: 22px; font-weight: 800; color: #1e40af; margin: 10px 0; }
+        .result-panel p { font-size: 14px; color: #334155; line-height: 1.6; }
+        .result-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+        .result-detail .item { background: white; border-radius: 8px; padding: 12px; border: 1px solid #d1fae5; }
+        .result-detail .item label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+        .result-detail .item span { display: block; font-size: 15px; font-weight: 700; color: #1e293b; margin-top: 2px; }
+
+        .toast { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: white; padding: 14px 22px; border-radius: 10px; font-size: 13px; font-weight: 500; display: none; box-shadow: 0 10px 40px rgba(0,0,0,0.15); z-index: 1000; max-width: 400px; }
+        .toast.show { display: block; animation: fadeIn 0.3s ease; }
+
+        .steps { display: flex; align-items: center; gap: 0; margin-bottom: 30px; }
+        .step { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 20px; font-size: 13px; font-weight: 500; color: #94a3b8; }
+        .step.active { color: #1e40af; background: #eff6ff; font-weight: 700; }
+        .step.done { color: #059669; }
+        .step-num { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #94a3b8; }
+        .step.active .step-num { background: #1e40af; color: white; }
+        .step.done .step-num { background: #059669; color: white; }
+        .step-arrow { color: #cbd5e1; margin: 0 4px; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .footer { text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; margin-top: 40px; }
+
+        @media (max-width: 768px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .hero { padding: 40px 20px; }
+            .hero h1 { font-size: 26px; }
+            .header { padding: 14px 18px; }
+            .container { padding: 24px 14px; }
+            .locations-grid { grid-template-columns: 1fr; }
+            .properties-grid { grid-template-columns: 1fr; }
+            .steps { flex-wrap: wrap; gap: 4px; }
+            .result-detail { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <span style="font-size:20px; font-weight:800; color:#1e293b; letter-spacing:-0.5px;">Marriott</span>
+            <span style="color:#cbd5e1;">|</span>
+            <span style="font-size:14px; font-weight:600; color:#1e40af;">GroupIQ</span>
+            <span style="font-size:12px; color:#64748b;">— Room Booking</span>
+        </div>
+        <div class="header-right">
+            <a href="/customer.html">My Bookings</a>
+            <a href="/index.html">Admin</a>
+        </div>
+    </div>
+
+    <div class="hero">
+        <h1>Book Group Rooms</h1>
+        <p>Find and reserve rooms across Marriott properties worldwide. No login required — open to everyone.</p>
+    </div>
+
+    <div class="container">
+        <div class="steps" id="steps">
+            <div class="step active" id="step1"><span class="step-num">1</span> Select Location</div>
+            <span class="step-arrow">&#8594;</span>
+            <div class="step" id="step2"><span class="step-num">2</span> Choose Property</div>
+            <span class="step-arrow">&#8594;</span>
+            <div class="step" id="step3"><span class="step-num">3</span> Fill Details</div>
+            <span class="step-arrow">&#8594;</span>
+            <div class="step" id="step4"><span class="step-num">4</span> Confirmed</div>
+        </div>
+
+        <!-- Step 1: Select Location -->
+        <div id="locationSection">
+            <h2 class="section-title">Select a Location</h2>
+            <p class="section-sub">Choose the city where you want to book group rooms</p>
+            <div class="locations-grid" id="locationsGrid"></div>
+        </div>
+
+        <!-- Step 2: Choose Property -->
+        <div class="properties-section" id="propertiesSection">
+            <h2 class="section-title" id="propTitle">Properties</h2>
+            <p class="section-sub" id="propSub">Select a property to book</p>
+            <div class="properties-grid" id="propertiesGrid"></div>
+        </div>
+
+        <!-- Step 3: Booking Form -->
+        <div class="booking-form" id="bookingForm">
+            <h2>Complete Your Booking</h2>
+            <div id="selectedSummary" style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:14px; margin-bottom:22px; font-size:13px; color:#1e40af; font-weight:500;"></div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="bkName" placeholder="Your full name">
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="bkEmail" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Company / Organization</label>
+                    <input type="text" id="bkCompany" placeholder="Company name">
+                </div>
+                <div class="form-group">
+                    <label>Event Type</label>
+                    <select id="bkEventType">
+                        <option value="conference">Conference</option>
+                        <option value="wedding">Wedding</option>
+                        <option value="corporate">Corporate Event</option>
+                        <option value="ipl_cricket">IPL Cricket Match</option>
+                        <option value="cricket_tournament">Cricket Tournament</option>
+                        <option value="sports_event">Sports Event</option>
+                        <option value="festival">Festival / Celebration</option>
+                        <option value="product_launch">Product Launch</option>
+                        <option value="social">Social Gathering</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Check-in Date *</label>
+                    <input type="date" id="bkCheckin" onchange="calcNights()">
+                </div>
+                <div class="form-group">
+                    <label>Check-out Date *</label>
+                    <input type="date" id="bkCheckout" onchange="calcNights()">
+                    <div class="nights-display" id="nightsDisplay"></div>
+                </div>
+                <div class="form-group">
+                    <label>Number of Rooms * (min 10)</label>
+                    <input type="number" id="bkRooms" min="10" value="10" placeholder="10+">
+                </div>
+                <div class="form-group">
+                    <label>Budget per Night ($)</label>
+                    <input type="number" id="bkBudget" placeholder="Optional">
+                </div>
+                <div class="form-group">
+                    <label>Food & Beverage</label>
+                    <select id="bkFnb">
+                        <option value="true">Yes, required</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Meeting Space</label>
+                    <select id="bkMeeting">
+                        <option value="true">Yes, required</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+                <div class="form-group form-full">
+                    <label>Special Requests</label>
+                    <textarea id="bkSpecial" rows="3" placeholder="Any special requirements (accessibility, dietary, AV equipment, etc.)"></textarea>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="submitBooking()">Submit Booking Request</button>
+                <button class="btn btn-secondary" onclick="resetForm()">Start Over</button>
+            </div>
+        </div>
+
+        <!-- Step 4: Confirmation -->
+        <div class="result-panel" id="resultPanel">
+            <h3>Booking Request Submitted!</h3>
+            <div id="resultContent"></div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Marriott GroupIQ | Group Booking Intelligence Platform | Open to all guests
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+    const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? window.location.origin
+        : 'https://groupiq-api.onrender.com';
+    let selectedLocation = null;
+    let selectedProperty = null;
+
+    // Load locations on page load
+    async function loadLocations() {
+        try {
+            const res = await fetch(API_BASE + '/properties');
+            const data = await res.json();
+            const locations = data.locations || {};
+            let html = '';
+            for (const [country, cities] of Object.entries(locations)) {
+                cities.forEach(loc => {
+                    html += '<div class="location-card" onclick="selectLocation(\'' + loc.code + '\', \'' + loc.city + '\')">' +
+                        '<div class="city">' + loc.city + '</div>' +
+                        '<div class="country">' + country + '</div>' +
+                        '<div class="props">' + loc.properties + ' properties available</div>' +
+                        '</div>';
+                });
+            }
+            document.getElementById('locationsGrid').innerHTML = html;
+        } catch(e) {
+            document.getElementById('locationsGrid').innerHTML = '<p style="color:#dc2626;">Could not load locations. Please refresh.</p>';
+        }
+    }
+
+    async function selectLocation(code, city) {
+        selectedLocation = code;
+        document.querySelectorAll('.location-card').forEach(c => c.classList.remove('selected'));
+        event.currentTarget.classList.add('selected');
+
+        setStep(2);
+
+        document.getElementById('propTitle').textContent = 'Properties in ' + city;
+        document.getElementById('propSub').textContent = 'Select a Marriott property to book your rooms';
+
+        try {
+            const res = await fetch(API_BASE + '/properties/' + code);
+            const data = await res.json();
+            const properties = data.properties || [];
+            let html = '';
+            properties.forEach(p => {
+                html += '<div class="property-card" onclick="selectProperty(this, \'' + p.property_id + '\', \'' + p.name.replace(/'/g, "\\'") + '\')">' +
+                    '<div class="name">' + p.name + '</div>' +
+                    '<div class="brand">' + p.brand + '</div>' +
+                    '<div class="address">' + p.address + '</div>' +
+                    '<div class="rooms-info">' +
+                    '<span class="room-tag">Total: ' + p.total_rooms + '</span>' +
+                    '<span class="room-tag">Available: ~' + p.estimated_available + '</span>' +
+                    '</div>' +
+                    '<div class="avail">' + (p.can_accommodate ? 'Can accommodate your group' : 'Limited availability') + '</div>' +
+                    '</div>';
+            });
+            document.getElementById('propertiesGrid').innerHTML = html;
+            document.getElementById('propertiesSection').classList.add('show');
+        } catch(e) {
+            showToast('Error loading properties');
+        }
+    }
+
+    function selectProperty(el, propId, propName) {
+        selectedProperty = { id: propId, name: propName };
+        document.querySelectorAll('.property-card').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+
+        setStep(3);
+
+        document.getElementById('selectedSummary').textContent = 'Booking at: ' + propName + ' (' + propId + ') in ' + selectedLocation;
+        document.getElementById('bookingForm').classList.add('show');
+        document.getElementById('bookingForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function calcNights() {
+        const ci = document.getElementById('bkCheckin').value;
+        const co = document.getElementById('bkCheckout').value;
+        if (ci && co) {
+            const nights = Math.round((new Date(co) - new Date(ci)) / 86400000);
+            document.getElementById('nightsDisplay').textContent = nights > 0 ? nights + ' night' + (nights > 1 ? 's' : '') : 'Invalid dates';
+        } else {
+            document.getElementById('nightsDisplay').textContent = '';
+        }
+    }
+
+    async function submitBooking() {
+        const name = document.getElementById('bkName').value.trim();
+        const email = document.getElementById('bkEmail').value.trim();
+        const ci = document.getElementById('bkCheckin').value;
+        const co = document.getElementById('bkCheckout').value;
+        const rooms = parseInt(document.getElementById('bkRooms').value) || 0;
+
+        if (!name) { showToast('Please enter your name'); return; }
+        if (!email || !email.includes('@')) { showToast('Please enter a valid email'); return; }
+        if (!ci || !co) { showToast('Please select check-in and check-out dates'); return; }
+        if (rooms < 10) { showToast('Minimum 10 rooms required for group booking'); return; }
+        if (!selectedProperty) { showToast('Please select a property first'); return; }
+
+        const nights = Math.round((new Date(co) - new Date(ci)) / 86400000);
+        if (nights < 1) { showToast('Check-out must be after check-in'); return; }
+
+        const payload = {
+            contact_name: name,
+            contact_email: email,
+            company_name: document.getElementById('bkCompany').value,
+            event_type: document.getElementById('bkEventType').value,
+            event_date: ci,
+            check_in_date: ci,
+            check_out_date: co,
+            num_nights: nights,
+            property_id: selectedProperty.id,
+            num_rooms: rooms,
+            fnb_required: document.getElementById('bkFnb').value === 'true',
+            meeting_space_required: document.getElementById('bkMeeting').value === 'true',
+            special_requests: document.getElementById('bkSpecial').value,
+            budget_indication: document.getElementById('bkBudget').value || ''
+        };
+
+        try {
+            const res = await fetch(API_BASE + '/customer/inquiries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (data.error || data.errors) {
+                showToast('Error: ' + (data.errors ? data.errors.join(', ') : data.error));
+                return;
+            }
+
+            setStep(4);
+
+            const pricing = data.dynamic_pricing || {};
+            const rate = pricing.final_rate ? '$' + pricing.final_rate.toFixed(0) : 'TBD';
+            const revenue = data.estimated_revenue ? '$' + Number(data.estimated_revenue).toLocaleString() : 'TBD';
+
+            document.getElementById('resultContent').innerHTML =
+                '<div class="booking-id">' + (data.inquiry_id || data.booking_id) + '</div>' +
+                '<p>Your group booking request has been received. Our revenue management team will review and respond within 24 hours.</p>' +
+                '<div class="result-detail">' +
+                '<div class="item"><label>Property</label><span>' + selectedProperty.name + '</span></div>' +
+                '<div class="item"><label>Dates</label><span>' + ci + ' to ' + co + ' (' + nights + ' nights)</span></div>' +
+                '<div class="item"><label>Rooms</label><span>' + rooms + ' rooms</span></div>' +
+                '<div class="item"><label>Rate/Night</label><span>' + rate + '</span></div>' +
+                '<div class="item"><label>Est. Revenue</label><span>' + revenue + '</span></div>' +
+                '<div class="item"><label>Status</label><span style="color:#059669;">INQUIRY RECEIVED</span></div>' +
+                '</div>' +
+                '<p style="margin-top:18px; font-size:13px; color:#64748b;">A confirmation email has been sent to <strong>' + email + '</strong>. ' +
+                'You can track your booking at <a href="/customer.html" style="color:#1e40af;">Customer Portal</a> using your email.</p>';
+
+            document.getElementById('resultPanel').classList.add('show');
+            document.getElementById('bookingForm').classList.remove('show');
+            document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showToast('Booking submitted successfully!');
+        } catch(e) {
+            showToast('Error submitting booking. Please try again.');
+        }
+    }
+
+    function setStep(num) {
+        for (let i = 1; i <= 4; i++) {
+            const el = document.getElementById('step' + i);
+            el.classList.remove('active', 'done');
+            if (i < num) el.classList.add('done');
+            if (i === num) el.classList.add('active');
+        }
+    }
+
+    function resetForm() {
+        selectedLocation = null;
+        selectedProperty = null;
+        document.getElementById('propertiesSection').classList.remove('show');
+        document.getElementById('bookingForm').classList.remove('show');
+        document.getElementById('resultPanel').classList.remove('show');
+        document.querySelectorAll('.location-card').forEach(c => c.classList.remove('selected'));
+        setStep(1);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    // Set min date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('bkCheckin').setAttribute('min', today);
+        document.getElementById('bkCheckout').setAttribute('min', today);
+        loadLocations();
+    });
+    </script>
+</body>
+</html>
