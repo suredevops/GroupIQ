@@ -1046,6 +1046,29 @@ def kill_port(port):
 def main():
     kill_port(PORT)
 
+    HTTPS_PORT = int(os.environ.get("HTTPS_PORT", "5556"))
+    CERT_FILE = Path(__file__).parent.parent / "certs" / "cert.pem"
+    KEY_FILE = Path(__file__).parent.parent / "certs" / "key.pem"
+
+    # Start HTTPS server in a thread (for GitHub Pages portal)
+    if CERT_FILE.exists() and KEY_FILE.exists():
+        import ssl
+        def run_https():
+            try:
+                kill_port(HTTPS_PORT)
+                https_server = ThreadedHTTPServer(("0.0.0.0", HTTPS_PORT), GroupIQHandler)
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ctx.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
+                https_server.socket = ctx.wrap_socket(https_server.socket, server_side=True)
+                print(f"[GroupIQ] HTTPS server running on https://localhost:{HTTPS_PORT}")
+                https_server.serve_forever()
+            except Exception as e:
+                print(f"[GroupIQ] HTTPS server failed: {e}")
+        https_thread = threading.Thread(target=run_https, daemon=True)
+        https_thread.start()
+    else:
+        print(f"[GroupIQ] No SSL certs found — HTTPS disabled (certs/ folder missing)")
+
     MAX_RESTARTS = 100
     restart_count = 0
 
