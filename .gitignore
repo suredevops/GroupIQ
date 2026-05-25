@@ -27,3 +27,7 @@ htmlcov/
 # LocalStack data
 .localstack/
 volume/
+
+# SSL certs and logs (local only)
+certs/
+logs/
