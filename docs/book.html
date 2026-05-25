@@ -12,6 +12,12 @@
         .header-left { display: flex; align-items: center; gap: 14px; }
         .header-right { display: flex; align-items: center; gap: 14px; }
         .header-right a { font-size: 13px; color: #1e40af; text-decoration: none; font-weight: 500; }
+        .tabs { display: flex; gap: 2px; margin-bottom: 22px; background: #f1f5f9; border-radius: 10px; padding: 4px; border: 1px solid #e2e8f0; width: fit-content; }
+        .tab { padding: 9px 20px; cursor: pointer; font-weight: 500; font-size: 13px; color: #64748b; border-radius: 7px; transition: all 0.2s; }
+        .tab.active { color: white; background: #1e40af; box-shadow: 0 2px 8px rgba(30,64,175,0.25); }
+        .tab:hover:not(.active) { color: #1e293b; background: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
         .hero { background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #1e40af 100%); color: white; padding: 60px 40px; text-align: center; }
         .hero h1 { font-size: 36px; font-weight: 800; margin-bottom: 12px; }
         .hero p { font-size: 16px; opacity: 0.9; max-width: 600px; margin: 0 auto; line-height: 1.6; }
@@ -73,6 +79,21 @@
         .step-arrow { color: #cbd5e1; margin: 0 4px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .footer { text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 12px; border-top: 1px solid #e2e8f0; margin-top: 40px; }
+        .neg-section { background: white; border: 1px solid #e2e8f0; border-radius: 14px; padding: 26px; }
+        .neg-section h2 { font-size: 17px; margin-bottom: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        .neg-section h2::before { content: ''; width: 4px; height: 18px; background: linear-gradient(180deg, #1e40af, #3b82f6); border-radius: 2px; }
+        .decision-guide { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+        .decision-card { border-radius: 10px; padding: 16px; text-align: center; }
+        .decision-card .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .decision-card .value { font-size: 24px; font-weight: 800; margin-top: 4px; }
+        .decision-card .sub { font-size: 11px; color: #64748b; margin-top: 4px; }
+        .neg-result { display: none; margin-top: 20px; border-radius: 12px; padding: 20px; }
+        .neg-result.show { display: block; animation: fadeIn 0.3s ease; }
+        .neg-timeline { display: none; margin-bottom: 20px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; }
+        .neg-timeline.show { display: block; }
+        .timeline-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #cbd5e1; }
+        .neg-actions { display: none; margin-top: 16px; }
+        .neg-actions.show { display: flex; gap: 12px; flex-wrap: wrap; }
         @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } .hero { padding: 40px 20px; } .hero h1 { font-size: 26px; } .locations-grid { grid-template-columns: 1fr; } .properties-grid { grid-template-columns: 1fr; } .steps { flex-wrap: wrap; gap: 4px; } .result-detail { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -93,6 +114,14 @@
         <p>Find and reserve rooms across Marriott properties worldwide. No login required — open to everyone.</p>
     </div>
     <div class="container">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('book')">Book Rooms</div>
+            <div class="tab" onclick="switchTab('negotiate')">Negotiate</div>
+            <div class="tab" onclick="switchTab('mybookings')">My Bookings</div>
+        </div>
+
+        <!-- Book Rooms Tab -->
+        <div id="tab-book" class="tab-content active">
         <div class="steps" id="steps">
             <div class="step active" id="step1"><span class="step-num">1</span> Select Location</div>
             <span class="step-arrow">&#8594;</span>
@@ -136,6 +165,70 @@
             </div>
         </div>
         <div class="result-panel" id="resultPanel"><h3>Booking Request Submitted!</h3><div id="resultContent"></div></div>
+        </div><!-- end tab-book -->
+
+        <!-- Negotiate Tab -->
+        <div id="tab-negotiate" class="tab-content">
+            <div class="neg-section">
+                <h2>Counter-Offer / Negotiate</h2>
+                <div style="background: linear-gradient(135deg, #eff6ff, #faf5ff); border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+                    <h4 style="font-size: 13px; color: #1e293b; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Negotiation Decision Guide</h4>
+                    <div class="decision-guide">
+                        <div class="decision-card" style="background: #ecfdf5; border: 1px solid #a7f3d0;">
+                            <div class="label" style="color: #059669;">ACCEPT</div>
+                            <div class="value" style="color: #065f46;">$265+</div>
+                            <div class="sub">per night</div>
+                        </div>
+                        <div class="decision-card" style="background: #fffbeb; border: 1px solid #fde68a;">
+                            <div class="label" style="color: #d97706;">COUNTER</div>
+                            <div class="value" style="color: #92400e;">$240</div>
+                            <div class="sub">$180 - $265 range</div>
+                        </div>
+                        <div class="decision-card" style="background: #fef2f2; border: 1px solid #fecaca;">
+                            <div class="label" style="color: #dc2626;">ESCALATE</div>
+                            <div class="value" style="color: #991b1b;">&lt;$180</div>
+                            <div class="sub">Manager review</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="neg-timeline" id="negTimeline"></div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Inquiry ID *</label>
+                        <input type="text" id="negId" placeholder="INQ-20260522-XXXXXXXX">
+                    </div>
+                    <div class="form-group">
+                        <label>Proposed Room Rate ($/night) *</label>
+                        <input type="number" id="negRate" placeholder="Your proposed rate">
+                    </div>
+                    <div class="form-group form-full">
+                        <label>Message</label>
+                        <textarea id="negMessage" rows="3" placeholder="Explain your counter-offer..."></textarea>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="submitNegotiation()">Submit Counter-Offer</button>
+                </div>
+
+                <div class="neg-result" id="negResult"></div>
+
+                <div class="neg-actions" id="negActions">
+                    <button class="btn" style="background:#059669; color:white;" onclick="acceptCounterOffer()">Accept This Rate</button>
+                    <button class="btn" style="background:#d97706; color:white;" onclick="negotiateAgain()">Negotiate Again</button>
+                    <button class="btn" style="background:#dc2626; color:white;" onclick="declineOffer()">Decline</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- My Bookings Tab -->
+        <div id="tab-mybookings" class="tab-content">
+            <div class="neg-section">
+                <h2>My Bookings</h2>
+                <div id="myBookingsTable"></div>
+            </div>
+        </div>
     </div>
     <div class="footer">Marriott GroupIQ | Group Booking Intelligence Platform | Open to all guests</div>
     <div class="toast" id="toast"></div>
@@ -350,6 +443,141 @@
         const t = document.getElementById('toast');
         t.textContent = msg; t.classList.add('show');
         setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach((t, i) => {
+            const tabs = ['book','negotiate','mybookings'];
+            t.classList.toggle('active', tabs[i] === name);
+        });
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.add('active');
+        if (name === 'mybookings') loadMyBookings();
+    }
+
+    function loadMyBookings() {
+        const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
+        if (!bookings.length) {
+            document.getElementById('myBookingsTable').innerHTML = '<div style="text-align:center; padding:40px; color:#94a3b8;"><p style="font-size:42px; margin-bottom:14px;">📋</p><p>No bookings yet. Book rooms first!</p></div>';
+            return;
+        }
+        let html = '<table><thead><tr><th>Booking ID</th><th>Property</th><th>Event</th><th>Check-in</th><th>Rooms</th><th>Rate</th><th>Revenue</th><th>Status</th></tr></thead><tbody>';
+        bookings.slice().reverse().forEach(b => {
+            html += '<tr><td><strong>' + b.id + '</strong></td><td>' + b.property + '</td><td>' + b.event + '</td><td>' + b.checkin + '</td><td>' + b.rooms + '</td><td>$' + b.rate + '</td><td>$' + b.revenue.toLocaleString() + '</td><td><span class="badge" style="background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; padding:4px 10px; border-radius:6px; font-size:10px; font-weight:700;">' + (b.status || 'INQUIRY_RECEIVED').replace(/_/g,' ') + '</span></td></tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById('myBookingsTable').innerHTML = html;
+    }
+
+    // Negotiation logic
+    let negState = { inquiryId: '', lastDecision: '', counterRate: null, turn: 0, history: [] };
+
+    function submitNegotiation() {
+        const id = document.getElementById('negId').value.trim();
+        const rate = parseFloat(document.getElementById('negRate').value);
+        const message = document.getElementById('negMessage').value;
+        if (!id) { showToast('Please enter an Inquiry ID'); return; }
+        if (!rate || rate <= 0) { showToast('Please enter a valid rate'); return; }
+
+        negState.inquiryId = id;
+        negState.turn++;
+
+        let decision, responseMsg, counterRate = null;
+        if (rate >= 265) {
+            decision = 'ACCEPT';
+            responseMsg = 'Your proposed rate of $' + rate + '/night has been accepted. Your booking is now confirmed!';
+        } else if (rate >= 180) {
+            decision = 'COUNTER';
+            counterRate = Math.round(rate + (265 - rate) * 0.5);
+            responseMsg = 'We appreciate your offer of $' + rate + '/night. Our best counter-offer is $' + counterRate + '/night which includes complimentary breakfast.';
+        } else {
+            decision = 'ESCALATE';
+            responseMsg = 'Your proposed rate of $' + rate + '/night is below our minimum threshold. This has been escalated to our Senior Sales Manager for review.';
+        }
+
+        negState.lastDecision = decision;
+        negState.counterRate = counterRate;
+
+        negState.history.push({ turn: negState.turn, action: 'YOU', rate: rate, message: message || 'Counter-offer submitted' });
+        negState.history.push({ turn: negState.turn, action: decision, rate: counterRate || rate, message: responseMsg });
+        renderTimeline();
+
+        const panel = document.getElementById('negResult');
+        let decColor = decision === 'ACCEPT' ? '#ecfdf5' : decision === 'COUNTER' ? '#fffbeb' : '#fef2f2';
+        let decBorder = decision === 'ACCEPT' ? '#a7f3d0' : decision === 'COUNTER' ? '#fde68a' : '#fecaca';
+        let decText = decision === 'ACCEPT' ? '#059669' : decision === 'COUNTER' ? '#d97706' : '#dc2626';
+
+        let html = '<h3 style="font-size:15px; margin-bottom:10px;">Negotiation Response (Round ' + negState.turn + ')</h3>' +
+            '<p><strong>Decision:</strong> <span style="background:' + decColor + '; color:' + decText + '; border:1px solid ' + decBorder + '; padding:4px 10px; border-radius:6px; font-size:10px; font-weight:700;">' + decision + '</span></p>' +
+            '<p style="margin-top:10px; color:#475569; font-size:14px;">' + responseMsg + '</p>';
+
+        if (decision === 'COUNTER' && counterRate) {
+            html += '<div style="margin-top:14px; padding:14px; background:#fffbeb; border:1px solid #fde68a; border-radius:10px;"><p style="font-weight:700; color:#92400e;">Counter Proposal: $' + counterRate + '/night</p><p style="font-size:12px; color:#78716c; margin-top:4px;">+ Complimentary breakfast included</p></div>';
+        }
+        if (decision === 'ACCEPT') {
+            const confirmedId = 'BKG-' + Date.now().toString(36).toUpperCase();
+            html += '<div style="margin-top:14px; padding:14px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; text-align:center;"><p style="font-weight:700; color:#059669; font-size:15px;">Booking Confirmed!</p><p style="margin-top:4px; font-size:18px; font-weight:800; color:#065f46;">' + confirmedId + '</p></div>';
+            // Update booking status in localStorage
+            const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
+            const idx = bookings.findIndex(b => b.id === id);
+            if (idx >= 0) { bookings[idx].status = 'ACCEPTED'; localStorage.setItem('groupiq_bookings', JSON.stringify(bookings)); }
+        }
+        if (decision === 'ESCALATE') {
+            html += '<div style="margin-top:14px; padding:14px; background:#fef2f2; border:1px solid #fecaca; border-radius:10px;"><p style="font-weight:600; color:#991b1b;">Escalated to Senior Sales Manager</p><p style="font-size:12px; color:#78716c; margin-top:4px;">A manager will review and provide a final offer within 24 hours.</p></div>';
+        }
+
+        panel.innerHTML = html;
+        panel.style.background = decColor;
+        panel.style.border = '1px solid ' + decBorder;
+        panel.classList.add('show');
+
+        document.getElementById('negActions').classList.toggle('show', decision !== 'ACCEPT');
+        showToast('Response: ' + decision);
+    }
+
+    function acceptCounterOffer() {
+        const rate = negState.counterRate || 265;
+        document.getElementById('negRate').value = rate;
+        document.getElementById('negMessage').value = 'I accept the counter-offer of $' + rate + '/night.';
+        submitNegotiation();
+    }
+
+    function negotiateAgain() {
+        document.getElementById('negResult').classList.remove('show');
+        document.getElementById('negActions').classList.remove('show');
+        document.getElementById('negRate').value = '';
+        document.getElementById('negMessage').value = '';
+        document.getElementById('negRate').focus();
+        showToast('Enter your new proposed rate');
+    }
+
+    function declineOffer() {
+        negState.history.push({ turn: negState.turn + 1, action: 'DECLINED', rate: null, message: 'Customer declined the offer' });
+        renderTimeline();
+        const panel = document.getElementById('negResult');
+        panel.innerHTML = '<h3 style="color:#dc2626;">Offer Declined</h3><p style="margin-top:8px; color:#475569;">You have declined this negotiation. You can start a new inquiry or try again with a different rate.</p>';
+        panel.style.background = '#fef2f2';
+        panel.style.border = '1px solid #fecaca';
+        panel.classList.add('show');
+        document.getElementById('negActions').classList.remove('show');
+        showToast('Offer declined.');
+    }
+
+    function renderTimeline() {
+        const el = document.getElementById('negTimeline');
+        if (negState.history.length === 0) { el.classList.remove('show'); return; }
+        el.classList.add('show');
+        let html = '<h4 style="font-size:13px; color:#1e293b; margin-bottom:14px; text-transform:uppercase; letter-spacing:0.5px;">Negotiation Timeline — ' + negState.inquiryId + '</h4>';
+        negState.history.forEach(item => {
+            let color = '#64748b', bg = '#f8fafc', icon = '●';
+            if (item.action === 'YOU') { color = '#1e40af'; bg = '#eff6ff'; icon = '→'; }
+            else if (item.action === 'ACCEPT') { color = '#059669'; bg = '#ecfdf5'; icon = '✓'; }
+            else if (item.action === 'COUNTER') { color = '#d97706'; bg = '#fffbeb'; icon = '↔'; }
+            else if (item.action === 'ESCALATE') { color = '#dc2626'; bg = '#fef2f2'; icon = '↑'; }
+            else if (item.action === 'DECLINED') { color = '#6b7280'; bg = '#f3f4f6'; icon = '✗'; }
+            html += '<div style="display:flex; align-items:flex-start; gap:12px; padding:10px; background:' + bg + '; border-radius:8px; margin-bottom:8px; border-left:3px solid ' + color + ';"><span style="font-size:16px; color:' + color + '; font-weight:700; min-width:20px;">' + icon + '</span><div><div style="font-size:12px; font-weight:700; color:' + color + '; text-transform:uppercase;">' + item.action + (item.rate ? ' — $' + item.rate + '/night' : '') + '</div><div style="font-size:12px; color:#64748b; margin-top:2px;">' + item.message + '</div></div></div>';
+        });
+        el.innerHTML = html;
     }
 
     const today = new Date().toISOString().split('T')[0];
