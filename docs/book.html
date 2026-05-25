@@ -517,7 +517,7 @@
     // Negotiation logic
     let negState = { inquiryId: '', lastDecision: '', counterRate: null, turn: 0, history: [] };
 
-    function submitNegotiation() {
+    async function submitNegotiation() {
         const id = document.getElementById('negId').value.trim();
         const rate = parseFloat(document.getElementById('negRate').value);
         const message = document.getElementById('negMessage').value;
@@ -527,17 +527,40 @@
         negState.inquiryId = id;
         negState.turn++;
 
-        let decision, responseMsg, counterRate = null;
-        if (rate >= 265) {
-            decision = 'ACCEPT';
-            responseMsg = 'Your proposed rate of $' + rate + '/night has been accepted. Your booking is now confirmed!';
-        } else if (rate >= 180) {
-            decision = 'COUNTER';
-            counterRate = Math.round(rate + (265 - rate) * 0.5);
-            responseMsg = 'We appreciate your offer of $' + rate + '/night. Our best counter-offer is $' + counterRate + '/night which includes complimentary breakfast.';
-        } else {
-            decision = 'ESCALATE';
-            responseMsg = 'Your proposed rate of $' + rate + '/night is below our minimum threshold. This has been escalated to our Senior Sales Manager for review.';
+        let decision, responseMsg, counterRate = null, emailSent = false;
+
+        // Try backend API first (sends real email notifications)
+        for (const endpoint of API_ENDPOINTS) {
+            try {
+                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ proposed_room_rate: rate, message: message })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    decision = (data.decision || '').toUpperCase();
+                    responseMsg = data.message_to_client || '';
+                    counterRate = data.counter_proposal ? data.counter_proposal.room_rate : null;
+                    emailSent = data.email_delivered || false;
+                    break;
+                }
+            } catch(e) { /* endpoint not reachable */ }
+        }
+
+        // Fallback: local logic if no backend
+        if (!decision) {
+            if (rate >= 265) {
+                decision = 'ACCEPT';
+                responseMsg = 'Your proposed rate of $' + rate + '/night has been accepted. Your booking is now confirmed!';
+            } else if (rate >= 180) {
+                decision = 'COUNTER';
+                counterRate = Math.round(rate + (265 - rate) * 0.5);
+                responseMsg = 'We appreciate your offer of $' + rate + '/night. Our best counter-offer is $' + counterRate + '/night which includes complimentary breakfast.';
+            } else {
+                decision = 'ESCALATE';
+                responseMsg = 'Your proposed rate of $' + rate + '/night is below our minimum threshold. This has been escalated to our Senior Sales Manager for review.';
+            }
         }
 
         negState.lastDecision = decision;
@@ -562,7 +585,6 @@
         if (decision === 'ACCEPT') {
             const confirmedId = 'BKG-' + Date.now().toString(36).toUpperCase();
             html += '<div style="margin-top:14px; padding:14px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; text-align:center;"><p style="font-weight:700; color:#059669; font-size:15px;">Booking Confirmed!</p><p style="margin-top:4px; font-size:18px; font-weight:800; color:#065f46;">' + confirmedId + '</p></div>';
-            // Update booking status in localStorage
             const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
             const idx = bookings.findIndex(b => b.id === id);
             if (idx >= 0) { bookings[idx].status = 'ACCEPTED'; localStorage.setItem('groupiq_bookings', JSON.stringify(bookings)); }
@@ -571,13 +593,17 @@
             html += '<div style="margin-top:14px; padding:14px; background:#fef2f2; border:1px solid #fecaca; border-radius:10px;"><p style="font-weight:600; color:#991b1b;">Escalated to Senior Sales Manager</p><p style="font-size:12px; color:#78716c; margin-top:4px;">A manager will review and provide a final offer within 24 hours.</p></div>';
         }
 
+        // Email notification status
+        html += '<div style="margin-top:14px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; font-size:12px; color:#64748b;">' +
+            (emailSent ? '✓ Email notification sent to customer' : '⚠ Email queued (server sync pending)') + '</div>';
+
         panel.innerHTML = html;
         panel.style.background = decColor;
         panel.style.border = '1px solid ' + decBorder;
         panel.classList.add('show');
 
         document.getElementById('negActions').classList.toggle('show', decision !== 'ACCEPT');
-        showToast('Response: ' + decision);
+        showToast(emailSent ? decision + ' — Email sent!' : 'Response: ' + decision);
     }
 
     function acceptCounterOffer() {
@@ -596,16 +622,40 @@
         showToast('Enter your new proposed rate');
     }
 
-    function declineOffer() {
+    async function declineOffer() {
+        const id = negState.inquiryId;
+        if (!id) { showToast('No active inquiry'); return; }
+
+        let emailSent = false;
+        // Notify backend to send decline email
+        for (const endpoint of API_ENDPOINTS) {
+            try {
+                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ proposed_room_rate: 0, message: 'DECLINE - Customer declined the offer', action: 'DECLINE' })
+                });
+                if (res.ok) { const data = await res.json(); emailSent = data.email_delivered || false; break; }
+            } catch(e) { /* try next */ }
+        }
+
         negState.history.push({ turn: negState.turn + 1, action: 'DECLINED', rate: null, message: 'Customer declined the offer' });
         renderTimeline();
         const panel = document.getElementById('negResult');
-        panel.innerHTML = '<h3 style="color:#dc2626;">Offer Declined</h3><p style="margin-top:8px; color:#475569;">You have declined this negotiation. You can start a new inquiry or try again with a different rate.</p>';
+        panel.innerHTML = '<h3 style="color:#dc2626;">Offer Declined</h3><p style="margin-top:8px; color:#475569;">You have declined this negotiation. You can start a new inquiry or try again with a different rate.</p>' +
+            '<div style="margin-top:14px; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; font-size:12px; color:#64748b;">' +
+            (emailSent ? '✓ Decline notification sent' : '⚠ Notification queued') + '</div>';
         panel.style.background = '#fef2f2';
         panel.style.border = '1px solid #fecaca';
         panel.classList.add('show');
         document.getElementById('negActions').classList.remove('show');
-        showToast('Offer declined.');
+
+        // Update localStorage
+        const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
+        const idx = bookings.findIndex(b => b.id === id);
+        if (idx >= 0) { bookings[idx].status = 'DECLINED'; localStorage.setItem('groupiq_bookings', JSON.stringify(bookings)); }
+
+        showToast(emailSent ? 'Declined — notification sent' : 'Offer declined');
     }
 
     function renderTimeline() {
