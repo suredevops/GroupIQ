@@ -378,7 +378,10 @@
         }
     }
 
-    function submitBooking() {
+    // Backend API endpoints to try (local server + any configured remote)
+    const API_ENDPOINTS = ['http://localhost:5555', 'http://10.7.155.179:5555'];
+
+    async function submitBooking() {
         const name = document.getElementById('bkName').value.trim();
         const email = document.getElementById('bkEmail').value.trim();
         const ci = document.getElementById('bkCheckin').value;
@@ -392,12 +395,54 @@
         const nights = Math.round((new Date(co) - new Date(ci)) / 86400000);
         if (nights < 1) { showToast('Check-out must be after check-in'); return; }
 
-        const bookingId = 'INQ-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.random().toString(36).substr(2,8).toUpperCase();
-        const rate = Math.floor(200 + Math.random() * 100);
-        const revenue = rate * rooms * nights;
+        const payload = {
+            contact_name: name,
+            contact_email: email,
+            company_name: document.getElementById('bkCompany').value,
+            event_type: document.getElementById('bkEventType').value,
+            event_date: ci,
+            check_in_date: ci,
+            check_out_date: co,
+            num_nights: nights,
+            property_id: selectedProperty.id,
+            num_rooms: rooms,
+            fnb_required: document.getElementById('bkFnb').value === 'true',
+            meeting_space_required: document.getElementById('bkMeeting').value === 'true',
+            special_requests: document.getElementById('bkSpecial').value,
+            budget_indication: document.getElementById('bkBudget').value || ''
+        };
 
-        // Store booking locally
-        const booking = { id: bookingId, name, email, company: document.getElementById('bkCompany').value, event: document.getElementById('bkEventType').value, property: selectedProperty.name, propertyId: selectedProperty.id, checkin: ci, checkout: co, nights, rooms, rate, revenue, status: 'INQUIRY_RECEIVED', created: new Date().toISOString() };
+        let bookingId, rate, revenue, apiSuccess = false;
+
+        // Try to submit to backend server (syncs with Admin portal)
+        for (const endpoint of API_ENDPOINTS) {
+            try {
+                const res = await fetch(endpoint + '/customer/inquiries', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    bookingId = data.inquiry_id || data.booking_id;
+                    const pricing = data.dynamic_pricing || {};
+                    rate = Math.round(pricing.final_rate || 0);
+                    revenue = Math.round(data.estimated_revenue || 0);
+                    apiSuccess = true;
+                    break;
+                }
+            } catch(e) { /* endpoint not reachable, try next */ }
+        }
+
+        // Fallback: generate locally if no backend available
+        if (!apiSuccess) {
+            bookingId = 'INQ-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.random().toString(36).substr(2,8).toUpperCase();
+            rate = Math.floor(200 + Math.random() * 100);
+            revenue = rate * rooms * nights;
+        }
+
+        // Store booking in localStorage for My Bookings tab
+        const booking = { id: bookingId, name, email, company: document.getElementById('bkCompany').value, event: document.getElementById('bkEventType').value, property: selectedProperty.name, propertyId: selectedProperty.id, checkin: ci, checkout: co, nights, rooms, rate, revenue, status: 'INQUIRY_RECEIVED', created: new Date().toISOString(), synced: apiSuccess };
         const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
         bookings.push(booking);
         localStorage.setItem('groupiq_bookings', JSON.stringify(bookings));
@@ -413,11 +458,11 @@
             '<div class="item"><label>Rate/Night</label><span>$' + rate + '</span></div>' +
             '<div class="item"><label>Est. Revenue</label><span>$' + revenue.toLocaleString() + '</span></div>' +
             '<div class="item"><label>Status</label><span style="color:#059669;">INQUIRY RECEIVED</span></div></div>' +
-            '<p style="margin-top:18px; font-size:13px; color:#64748b;">Confirmation sent to <strong>' + email + '</strong>. Track at <a href="customer.html">Customer Portal</a>.</p>';
+            '<p style="margin-top:18px; font-size:13px; color:#64748b;">Confirmation sent to <strong>' + email + '</strong>. Track at <a href="customer.html">Customer Portal</a>.' + (apiSuccess ? ' <span style="color:#059669;">(Synced to Admin)</span>' : ' <span style="color:#d97706;">(Offline — will sync when server is available)</span>') + '</p>';
         document.getElementById('resultPanel').classList.add('show');
         document.getElementById('bookingForm').classList.remove('show');
         document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth' });
-        showToast('Booking submitted! ID: ' + bookingId);
+        showToast(apiSuccess ? 'Booking submitted & synced to Admin!' : 'Booking saved locally (server offline)');
     }
 
     function setStep(num) {
