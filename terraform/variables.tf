@@ -41,3 +41,15 @@ variable "proposal_expiry_days" {
   type        = number
   default     = 7
 }
+
+variable "bedrock_guardrail_id" {
+  description = "AWS Bedrock Guardrail ID for content safety filtering. Leave empty to disable."
+  type        = string
+  default     = ""
+}
+
+variable "bedrock_guardrail_version" {
+  description = "Bedrock Guardrail version number or DRAFT"
+  type        = string
+  default     = "DRAFT"
+}

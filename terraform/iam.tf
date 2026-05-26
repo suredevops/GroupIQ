@@ -55,6 +55,11 @@ resource "aws_iam_role_policy" "lambda_bedrock" {
           "bedrock:InvokeModelWithResponseStream"
         ]
         Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "bedrock:ApplyGuardrail"
+        Resource = var.bedrock_guardrail_id != "" ? "arn:aws:bedrock:${var.aws_region}:*:guardrail/${var.bedrock_guardrail_id}" : "*"
       }
     ]
   })

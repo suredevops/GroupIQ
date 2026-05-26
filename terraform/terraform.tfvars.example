@@ -5,3 +5,8 @@ max_discount_percent = 15
 escalation_email     = "group-sales@marriott-groupiq.example.com"
 ses_sender_email     = "proposals@marriott-groupiq.example.com"
 proposal_expiry_days = 7
+
+# Bedrock Guardrails (optional — leave empty to disable)
+# Create a guardrail in AWS Console > Bedrock > Guardrails, then paste the ID here
+bedrock_guardrail_id      = ""
+bedrock_guardrail_version = "DRAFT"

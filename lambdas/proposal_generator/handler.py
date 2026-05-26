@@ -27,6 +27,8 @@ BOOKINGS_TABLE = os.environ["BOOKINGS_TABLE"]
 PRICING_TABLE = os.environ["PRICING_TABLE"]
 PROPOSALS_BUCKET = os.environ["PROPOSALS_BUCKET"]
 BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
+BEDROCK_GUARDRAIL_ID = os.environ.get("BEDROCK_GUARDRAIL_ID", "")
+BEDROCK_GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
 
 
 PROPOSAL_SYSTEM_PROMPT = """You are GroupIQ, an expert hotel group sales AI for Marriott International.
@@ -129,12 +131,17 @@ Property Pricing Rules:
     })
 
     try:
-        response = client.invoke_model(
+        invoke_params = dict(
             modelId=BEDROCK_MODEL_ID,
             contentType="application/json",
             accept="application/json",
             body=request_body,
         )
+        if BEDROCK_GUARDRAIL_ID:
+            invoke_params["guardrailIdentifier"] = BEDROCK_GUARDRAIL_ID
+            invoke_params["guardrailVersion"] = BEDROCK_GUARDRAIL_VERSION
+
+        response = client.invoke_model(**invoke_params)
 
         response_body = json.loads(response["body"].read())
         content = response_body["content"][0]["text"]

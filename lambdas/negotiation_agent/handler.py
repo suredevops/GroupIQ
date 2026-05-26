@@ -34,6 +34,8 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 MAX_DISCOUNT_PERCENT = float(os.environ.get("MAX_DISCOUNT_PERCENT", "15"))
 ESCALATION_TOPIC_ARN = os.environ["ESCALATION_TOPIC_ARN"]
 SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "noreply@groupiq.local")
+BEDROCK_GUARDRAIL_ID = os.environ.get("BEDROCK_GUARDRAIL_ID", "")
+BEDROCK_GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
 
 
 NEGOTIATION_SYSTEM_PROMPT = """You are GroupIQ's negotiation engine for Marriott International group bookings.
@@ -182,12 +184,17 @@ Max Allowed Discount: {MAX_DISCOUNT_PERCENT}%
     })
 
     try:
-        response = client.invoke_model(
+        invoke_params = dict(
             modelId=BEDROCK_MODEL_ID,
             contentType="application/json",
             accept="application/json",
             body=request_body,
         )
+        if BEDROCK_GUARDRAIL_ID:
+            invoke_params["guardrailIdentifier"] = BEDROCK_GUARDRAIL_ID
+            invoke_params["guardrailVersion"] = BEDROCK_GUARDRAIL_VERSION
+
+        response = client.invoke_model(**invoke_params)
 
         response_body = json.loads(response["body"].read())
         content = response_body["content"][0]["text"]

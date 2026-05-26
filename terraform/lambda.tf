@@ -47,11 +47,13 @@ resource "aws_lambda_function" "proposal_generator" {
 
   environment {
     variables = {
-      BOOKINGS_TABLE   = aws_dynamodb_table.bookings.name
-      PRICING_TABLE    = aws_dynamodb_table.pricing_rules.name
-      PROPOSALS_BUCKET = aws_s3_bucket.proposals.id
-      BEDROCK_MODEL_ID = var.bedrock_model_id
-      ENVIRONMENT      = var.environment
+      BOOKINGS_TABLE            = aws_dynamodb_table.bookings.name
+      PRICING_TABLE             = aws_dynamodb_table.pricing_rules.name
+      PROPOSALS_BUCKET          = aws_s3_bucket.proposals.id
+      BEDROCK_MODEL_ID          = var.bedrock_model_id
+      BEDROCK_GUARDRAIL_ID      = var.bedrock_guardrail_id
+      BEDROCK_GUARDRAIL_VERSION = var.bedrock_guardrail_version
+      ENVIRONMENT               = var.environment
     }
   }
 
@@ -75,13 +77,15 @@ resource "aws_lambda_function" "negotiation_agent" {
 
   environment {
     variables = {
-      BOOKINGS_TABLE       = aws_dynamodb_table.bookings.name
-      NEGOTIATIONS_TABLE   = aws_dynamodb_table.negotiation_history.name
-      PRICING_TABLE        = aws_dynamodb_table.pricing_rules.name
-      BEDROCK_MODEL_ID     = var.bedrock_model_id
-      MAX_DISCOUNT_PERCENT = tostring(var.max_discount_percent)
-      ESCALATION_TOPIC_ARN = aws_sns_topic.escalation.arn
-      ENVIRONMENT          = var.environment
+      BOOKINGS_TABLE            = aws_dynamodb_table.bookings.name
+      NEGOTIATIONS_TABLE        = aws_dynamodb_table.negotiation_history.name
+      PRICING_TABLE             = aws_dynamodb_table.pricing_rules.name
+      BEDROCK_MODEL_ID          = var.bedrock_model_id
+      BEDROCK_GUARDRAIL_ID      = var.bedrock_guardrail_id
+      BEDROCK_GUARDRAIL_VERSION = var.bedrock_guardrail_version
+      MAX_DISCOUNT_PERCENT      = tostring(var.max_discount_percent)
+      ESCALATION_TOPIC_ARN      = aws_sns_topic.escalation.arn
+      ENVIRONMENT               = var.environment
     }
   }
 
