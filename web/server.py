@@ -1055,7 +1055,7 @@ def sync_from_render():
     ctx.verify_mode = ssl.CERT_NONE
     while True:
         try:
-            time.sleep(30)
+            time.sleep(10)
             req = urllib.request.Request(f"{RENDER_API_URL}/bookings")
             with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 data = json.loads(resp.read().decode())
