@@ -381,6 +381,16 @@
     // Backend API endpoints to try (Render cloud server + local fallback)
     const API_ENDPOINTS = ['https://groupiq.onrender.com', 'https://localhost:5556', 'http://localhost:5555'];
 
+    // Wake up Render server on page load (cold start takes ~30s)
+    fetch('https://groupiq.onrender.com/health').catch(() => {});
+
+    // Fetch with timeout helper
+    function fetchWithTimeout(url, options, timeoutMs = 45000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        return fetch(url, {...options, signal: controller.signal}).finally(() => clearTimeout(timer));
+    }
+
     async function submitBooking() {
         const name = document.getElementById('bkName').value.trim();
         const email = document.getElementById('bkEmail').value.trim();
@@ -394,6 +404,11 @@
         if (!selectedProperty) { showToast('Please select a property'); return; }
         const nights = Math.round((new Date(co) - new Date(ci)) / 86400000);
         if (nights < 1) { showToast('Check-out must be after check-in'); return; }
+
+        // Show loading state
+        const submitBtn = document.querySelector('#bookingForm button[onclick="submitBooking()"]');
+        const originalText = submitBtn ? submitBtn.textContent : '';
+        if (submitBtn) { submitBtn.textContent = 'Submitting... Please wait'; submitBtn.disabled = true; }
 
         const payload = {
             contact_name: name,
@@ -417,11 +432,11 @@
         // Try to submit to backend server (syncs with Admin portal)
         for (const endpoint of API_ENDPOINTS) {
             try {
-                const res = await fetch(endpoint + '/customer/inquiries', {
+                const res = await fetchWithTimeout(endpoint + '/customer/inquiries', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
-                });
+                }, 50000);
                 if (res.ok) {
                     const data = await res.json();
                     bookingId = data.inquiry_id || data.booking_id;
@@ -433,6 +448,9 @@
                 }
             } catch(e) { /* endpoint not reachable, try next */ }
         }
+
+        // Restore button
+        if (submitBtn) { submitBtn.textContent = originalText; submitBtn.disabled = false; }
 
         // Fallback: generate locally if no backend available
         if (!apiSuccess) {
@@ -566,11 +584,11 @@
         // Try backend API first (sends real email notifications)
         for (const endpoint of API_ENDPOINTS) {
             try {
-                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                const res = await fetchWithTimeout(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ proposed_room_rate: rate, message: message })
-                });
+                }, 50000);
                 if (res.ok) {
                     const data = await res.json();
                     decision = (data.decision || '').toUpperCase();
@@ -664,11 +682,11 @@
         // Notify backend to send decline email
         for (const endpoint of API_ENDPOINTS) {
             try {
-                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                const res = await fetchWithTimeout(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ proposed_room_rate: 0, message: 'DECLINE - Customer declined the offer', action: 'DECLINE' })
-                });
+                }, 50000);
                 if (res.ok) { const data = await res.json(); emailSent = data.email_delivered || false; break; }
             } catch(e) { /* try next */ }
         }
