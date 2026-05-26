@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>GroupIQ — Book a Room</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -380,6 +383,15 @@
 
     // Backend API endpoints to try (Render cloud server + local fallback)
     const API_ENDPOINTS = ['https://groupiq.onrender.com', 'https://localhost:5556', 'http://localhost:5555'];
+
+    // App version - forces reload when updated
+    const APP_VERSION = '2.1';
+    const storedVersion = localStorage.getItem('groupiq_app_version');
+    if (storedVersion && storedVersion !== APP_VERSION) {
+        localStorage.setItem('groupiq_app_version', APP_VERSION);
+        location.reload(true);
+    }
+    localStorage.setItem('groupiq_app_version', APP_VERSION);
 
     // Wake up Render server on page load (cold start takes ~30s)
     fetch('https://groupiq.onrender.com/health').catch(() => {});
