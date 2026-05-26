@@ -1043,8 +1043,32 @@ def kill_port(port):
         pass
 
 
+RENDER_API_URL = os.environ.get("RENDER_API_URL", "https://groupiq-api.onrender.com")
+
+
+def sync_from_render():
+    """Periodically fetch bookings from Render cloud backend and merge into local backup."""
+    import time
+    while True:
+        try:
+            time.sleep(30)
+            req = urllib.request.Request(f"{RENDER_API_URL}/bookings")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                remote_bookings = data.get("bookings", [])
+                if remote_bookings:
+                    backup.sync_from_dynamodb(remote_bookings)
+                    print(f"[GroupIQ] Synced {len(remote_bookings)} bookings from Render")
+        except Exception as e:
+            pass
+
+
 def main():
     kill_port(PORT)
+
+    # Start background sync from Render cloud API
+    sync_thread = threading.Thread(target=sync_from_render, daemon=True)
+    sync_thread.start()
 
     HTTPS_PORT = int(os.environ.get("HTTPS_PORT", "5556"))
     CERT_FILE = Path(__file__).parent.parent / "certs" / "cert.pem"

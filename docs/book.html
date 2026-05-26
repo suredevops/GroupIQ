@@ -378,8 +378,8 @@
         }
     }
 
-    // Backend API endpoints to try (local server + any configured remote)
-    const API_ENDPOINTS = ['https://localhost:5556', 'http://localhost:5555'];
+    // Backend API endpoints to try (Render cloud server + local fallback)
+    const API_ENDPOINTS = ['https://groupiq-api.onrender.com', 'https://localhost:5556', 'http://localhost:5555'];
 
     async function submitBooking() {
         const name = document.getElementById('bkName').value.trim();

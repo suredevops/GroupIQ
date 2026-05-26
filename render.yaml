@@ -3,13 +3,23 @@ services:
     name: groupiq-api
     runtime: python
     buildCommand: pip install -r web/requirements.txt
-    startCommand: cd web && python server.py
+    startCommand: cd web && python server_prod.py
     envVars:
       - key: PORT
-        value: "5555"
+        value: "10000"
       - key: ENVIRONMENT
         value: "production"
       - key: PYTHON_VERSION
         value: "3.11"
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SES_SENDER_EMAIL
+        sync: false
     plan: free
     autoDeploy: true
