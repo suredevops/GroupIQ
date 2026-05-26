@@ -1043,24 +1043,28 @@ def kill_port(port):
         pass
 
 
-RENDER_API_URL = os.environ.get("RENDER_API_URL", "https://groupiq-api.onrender.com")
+RENDER_API_URL = os.environ.get("RENDER_API_URL", "https://groupiq.onrender.com")
 
 
 def sync_from_render():
     """Periodically fetch bookings from Render cloud backend and merge into local backup."""
     import time
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     while True:
         try:
             time.sleep(30)
             req = urllib.request.Request(f"{RENDER_API_URL}/bookings")
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
                 data = json.loads(resp.read().decode())
                 remote_bookings = data.get("bookings", [])
                 if remote_bookings:
                     backup.sync_from_dynamodb(remote_bookings)
                     print(f"[GroupIQ] Synced {len(remote_bookings)} bookings from Render")
         except Exception as e:
-            pass
+            print(f"[GroupIQ] Render sync error: {e}")
 
 
 def main():
