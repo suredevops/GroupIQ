@@ -60,25 +60,29 @@ def gen_id():
 
 
 def send_email(to_email, subject, html_body):
+    """Send email in a background thread so it never blocks the API response."""
     sender = SES_SENDER_EMAIL or SMTP_USERNAME
     if not smtp_configured:
-        print(f"[EMAIL-LOG] To: {to_email} | Subject: {subject} (not sent)")
+        print(f"[EMAIL-LOG] To: {to_email} | Subject: {subject} (not sent - SMTP not configured)")
         return False
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"GroupIQ Marriott <{sender}>"
-        msg["To"] = to_email
-        msg.attach(MIMEText(html_body, "html"))
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(sender, to_email, msg.as_string())
-        print(f"[EMAIL-SENT] To: {to_email} | Subject: {subject}")
-        return True
-    except Exception as e:
-        print(f"[EMAIL-ERROR] {e}")
-        return False
+
+    def _send():
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"GroupIQ Marriott <{sender}>"
+            msg["To"] = to_email
+            msg.attach(MIMEText(html_body, "html"))
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                server.starttls()
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                server.sendmail(sender, to_email, msg.as_string())
+            print(f"[EMAIL-SENT] To: {to_email} | Subject: {subject}")
+        except Exception as e:
+            print(f"[EMAIL-ERROR] {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
+    return True
 
 
 def calculate_pricing(num_rooms, num_nights, event_type):
