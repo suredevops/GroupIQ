@@ -176,7 +176,22 @@ class ProdHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            if self.path == "/health":
+            if self.path == "/" or self.path == "":
+                self._json_response(200, {
+                    "service": "GroupIQ API",
+                    "status": "running",
+                    "version": "1.0",
+                    "endpoints": {
+                        "health": "/health",
+                        "bookings": "/bookings",
+                        "new_inquiry": "POST /customer/inquiries",
+                        "negotiate": "POST /customer/inquiries/{id}/negotiate",
+                        "properties": "/properties",
+                        "properties_by_location": "/properties/{location_code}"
+                    },
+                    "portal": "https://suredevops.github.io/GroupIQ/book.html"
+                })
+            elif self.path == "/health":
                 self._json_response(200, {"status": "ok", "bookings": len(load_bookings())})
             elif self.path == "/bookings":
                 self._handle_get_bookings()
