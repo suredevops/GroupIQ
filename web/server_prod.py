@@ -254,6 +254,8 @@ class ProdHandler(http.server.BaseHTTPRequestHandler):
             "version": 1,
             "estimated_revenue": revenue,
             "dynamic_pricing": pricing,
+            "dynamic_room_rate": pricing["final_rate"],
+            "base_room_rate": pricing["base_rate"],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "fnb_required": parsed.get("fnb_required", False),
