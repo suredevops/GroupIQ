@@ -503,14 +503,48 @@
     function loadMyBookings() {
         const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
         if (!bookings.length) {
-            document.getElementById('myBookingsTable').innerHTML = '<div style="text-align:center; padding:40px; color:#94a3b8;"><p style="font-size:42px; margin-bottom:14px;">📋</p><p>No bookings yet. Book rooms first!</p></div>';
+            document.getElementById('myBookingsTable').innerHTML = '<div style="text-align:center; padding:40px; color:#94a3b8;"><p style="font-size:42px; margin-bottom:14px;">📋</p><p>No bookings yet. <a href="#" onclick="switchTab(\'book\')" style="color:#1e40af;">Book rooms now</a>.</p></div>';
             return;
         }
-        let html = '<table><thead><tr><th>Booking ID</th><th>Property</th><th>Event</th><th>Check-in</th><th>Rooms</th><th>Rate</th><th>Revenue</th><th>Status</th></tr></thead><tbody>';
-        bookings.slice().reverse().forEach(b => {
-            html += '<tr><td><strong>' + b.id + '</strong></td><td>' + b.property + '</td><td>' + b.event + '</td><td>' + b.checkin + '</td><td>' + b.rooms + '</td><td>$' + b.rate + '</td><td>$' + b.revenue.toLocaleString() + '</td><td><span class="badge" style="background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe; padding:4px 10px; border-radius:6px; font-size:10px; font-weight:700;">' + (b.status || 'INQUIRY_RECEIVED').replace(/_/g,' ') + '</span></td></tr>';
+
+        const totalRevenue = bookings.reduce((s, b) => s + (b.revenue || 0), 0);
+        const totalRooms = bookings.reduce((s, b) => s + (b.rooms || 0), 0);
+
+        let html = '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-bottom:22px;">' +
+            '<div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Total Bookings</div><div style="font-size:24px; font-weight:800; color:#1e40af; margin-top:4px;">' + bookings.length + '</div></div>' +
+            '<div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Total Revenue</div><div style="font-size:24px; font-weight:800; color:#059669; margin-top:4px;">$' + totalRevenue.toLocaleString() + '</div></div>' +
+            '<div style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:10px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Total Rooms</div><div style="font-size:24px; font-weight:800; color:#7c3aed; margin-top:4px;">' + totalRooms + '</div></div>' +
+            '</div>';
+
+        html += '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse;">' +
+            '<thead><tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:left;">Booking ID</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:left;">Property</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:left;">Event</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:left;">Dates</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:center;">Rooms</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:right;">Rate/Night</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:right;">Revenue</th>' +
+            '<th style="padding:12px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:600; text-align:center;">Status</th>' +
+            '</tr></thead><tbody>';
+
+        bookings.slice().reverse().forEach((b, i) => {
+            const statusColors = { 'INQUIRY_RECEIVED': {bg:'#eff6ff',color:'#2563eb',border:'#bfdbfe'}, 'ACCEPTED': {bg:'#ecfdf5',color:'#059669',border:'#a7f3d0'}, 'NEGOTIATING': {bg:'#faf5ff',color:'#9333ea',border:'#e9d5ff'}, 'ESCALATED': {bg:'#fef2f2',color:'#dc2626',border:'#fecaca'}, 'DECLINED': {bg:'#f3f4f6',color:'#6b7280',border:'#d1d5db'} };
+            const st = statusColors[(b.status || 'INQUIRY_RECEIVED')] || statusColors['INQUIRY_RECEIVED'];
+            const rowBg = i % 2 === 0 ? 'white' : '#fafbfc';
+
+            html += '<tr style="background:' + rowBg + '; border-bottom:1px solid #f1f5f9;">' +
+                '<td style="padding:14px; font-size:12px;"><strong style="color:#1e40af; font-weight:700;">' + b.id + '</strong></td>' +
+                '<td style="padding:14px; font-size:13px; color:#334155;">' + b.property + '</td>' +
+                '<td style="padding:14px; font-size:13px; color:#334155; text-transform:capitalize;">' + (b.event || '').replace(/_/g,' ') + '</td>' +
+                '<td style="padding:14px; font-size:12px; color:#475569;">' + b.checkin + '<br><span style="font-size:11px; color:#94a3b8;">' + (b.nights || 1) + ' nights</span></td>' +
+                '<td style="padding:14px; font-size:14px; font-weight:600; color:#1e293b; text-align:center;">' + b.rooms + '</td>' +
+                '<td style="padding:14px; font-size:14px; font-weight:600; color:#1e293b; text-align:right;">$' + b.rate + '</td>' +
+                '<td style="padding:14px; font-size:14px; font-weight:700; color:#059669; text-align:right;">$' + b.revenue.toLocaleString() + '</td>' +
+                '<td style="padding:14px; text-align:center;"><span style="background:' + st.bg + '; color:' + st.color + '; border:1px solid ' + st.border + '; padding:5px 12px; border-radius:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; white-space:nowrap;">' + (b.status || 'INQUIRY_RECEIVED').replace(/_/g,' ') + '</span></td>' +
+                '</tr>';
         });
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         document.getElementById('myBookingsTable').innerHTML = html;
     }
 
