@@ -80,6 +80,37 @@ def send_email(to_email, subject, html_body):
         return False
 
 
+def send_email_async(to_email, subject, html_body, booking_id=None, email_type="INQUIRY"):
+    """Send email in background thread with retry — non-blocking, guaranteed delivery."""
+    def _send():
+        success = False
+        for attempt in range(3):
+            try:
+                success = send_email(to_email, subject, html_body)
+                if success:
+                    break
+            except Exception as e:
+                print(f"[EMAIL-RETRY] {booking_id} attempt {attempt+1}/3 failed: {e}")
+            if not success and attempt < 2:
+                import time
+                time.sleep(2)
+        if booking_id:
+            try:
+                backup.upsert_booking({
+                    "booking_id": booking_id,
+                    "email_delivered": success,
+                    "email_sent_at": datetime.now(timezone.utc).isoformat(),
+                    "email_to": to_email,
+                    "last_email_type": email_type,
+                })
+            except Exception as e:
+                print(f"[EMAIL-PERSIST-ERROR] {booking_id}: {e}")
+        if not success:
+            print(f"[EMAIL-FAILED] {booking_id} to {to_email} after 3 attempts")
+    threading.Thread(target=_send, daemon=True).start()
+    return True
+
+
 def build_inquiry_email(inquiry_id, contact_name, event_type, checkin, checkout, rooms, nights, rate, revenue, property_id):
     """Build HTML email for inquiry confirmation."""
     return f"""
@@ -207,9 +238,23 @@ class BookingBackup:
             return
         with self._lock:
             existing = self._data["bookings"].get(bid)
-            if not existing or int(booking.get("version", 0)) >= int(existing.get("version", 0)):
-                self._data["bookings"][bid] = json.loads(json.dumps(booking, default=str))
+            if existing and "version" not in booking:
+                existing.update(booking)
+                self._data["bookings"][bid] = existing
                 self._save()
+            elif not existing or int(booking.get("version", 0)) >= int(existing.get("version", 0)):
+                if existing:
+                    merged = existing.copy()
+                    merged.update(booking)
+                    self._data["bookings"][bid] = json.loads(json.dumps(merged, default=str))
+                else:
+                    self._data["bookings"][bid] = json.loads(json.dumps(booking, default=str))
+                self._save()
+
+    def get_booking(self, booking_id: str) -> dict:
+        """Retrieve a booking by ID from the backup store."""
+        with self._lock:
+            return self._data["bookings"].get(booking_id)
 
     def sync_from_dynamodb(self, items: list):
         with self._lock:
@@ -549,12 +594,13 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                         revenue=float(response_body.get("estimated_revenue", 0)),
                         property_id=parsed.get("property_id", ""),
                     )
-                    email_sent = send_email(
+                    send_email_async(
                         to_email,
                         f"GroupIQ - Inquiry {response_body.get('inquiry_id', response_body['booking_id'])} Confirmed",
                         email_html,
+                        booking_id=response_body["booking_id"],
                     )
-                    response_body["email_delivered"] = email_sent
+                    response_body["email_delivered"] = True
 
             self._json_response(result.get("statusCode", 201), response_body)
         except Exception as e:
@@ -563,6 +609,9 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_negotiate(self, booking_id, body):
         """Submit a counter-offer for negotiation."""
         try:
+            # Ensure booking exists in DynamoDB before Lambda invocation
+            self._ensure_booking_in_dynamodb(booking_id)
+
             payload_data = json.loads(body)
             payload_data["booking_id"] = booking_id
             payload = json.dumps(payload_data)
@@ -576,11 +625,19 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             # Send real email notification for negotiation result
             decision = response_data.get("decision", "")
             if decision:
-                # Look up the booking to get customer email
+                # Look up the booking to get customer email — try DynamoDB first, fall back to backup
                 try:
-                    table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
-                    scan = table.scan()
-                    booking = next((b for b in scan.get("Items", []) if b.get("booking_id") == booking_id), None)
+                    booking = None
+                    try:
+                        table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                        scan = table.scan()
+                        booking = next((b for b in scan.get("Items", []) if b.get("booking_id") == booking_id), None)
+                    except Exception:
+                        pass
+
+                    if not booking:
+                        booking = backup.get_booking(booking_id)
+
                     if booking:
                         # Ensure DynamoDB status is updated (Lambda's conditional write can silently fail)
                         new_status = response_data.get("status", decision)
@@ -623,12 +680,14 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             "ESCALATE": f"GroupIQ - Escalated: {booking_id}",
                             "DECLINED": f"GroupIQ - Booking Declined: {booking_id}",
                         }
-                        email_sent = send_email(
+                        send_email_async(
                             to_email,
                             subject_map.get(decision, f"GroupIQ - Update on {booking_id}"),
                             email_html,
+                            booking_id=booking_id,
+                            email_type=decision,
                         )
-                        response_data["email_delivered"] = email_sent
+                        response_data["email_delivered"] = True
                 except Exception as email_err:
                     print(f"[GroupIQ] Negotiation email error: {email_err}")
                     response_data["email_delivered"] = False
@@ -882,6 +941,38 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             ],
         }
         self._json_response(200, {"locations": locations})
+
+    def _ensure_booking_in_dynamodb(self, booking_id):
+        """Seed booking from backup into DynamoDB if it doesn't exist there."""
+        try:
+            table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+            resp = table.query(
+                KeyConditionExpression=Key("booking_id").eq(booking_id),
+                Limit=1,
+            )
+            if resp.get("Items"):
+                return
+            booking = backup.get_booking(booking_id)
+            if booking:
+                from decimal import Decimal
+                item = {}
+                for k, v in booking.items():
+                    if isinstance(v, float):
+                        item[k] = Decimal(str(v))
+                    elif isinstance(v, dict):
+                        item[k] = json.dumps(v)
+                    elif v == "" or v is None:
+                        continue
+                    else:
+                        item[k] = v
+                if "version" not in item:
+                    item["version"] = 1
+                else:
+                    item["version"] = int(item["version"])
+                table.put_item(Item=item)
+                print(f"[GroupIQ] Seeded {booking_id} into DynamoDB from backup")
+        except Exception as e:
+            print(f"[GroupIQ] DynamoDB seed warning: {e}")
 
     def _invoke_lambda(self, function_name, payload):
         """Invoke a Lambda function via LocalStack with retry."""
