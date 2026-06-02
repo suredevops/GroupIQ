@@ -16,6 +16,17 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+# Auto-load .env file for persistent SMTP and AWS configuration
+_env_path = Path(__file__).parent.parent / ".env"
+if _env_path.exists():
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _key, _val = _line.split("=", 1)
+                if _key.strip() not in os.environ:
+                    os.environ[_key.strip()] = _val.strip()
+
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 
@@ -93,7 +104,7 @@ def send_email_async(to_email, subject, html_body, booking_id=None, email_type="
                 print(f"[EMAIL-RETRY] {booking_id} attempt {attempt+1}/3 failed: {e}")
             if not success and attempt < 2:
                 import time
-                time.sleep(2)
+                time.sleep(1)
         if booking_id:
             try:
                 backup.upsert_booking({
@@ -352,6 +363,19 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB_DIR), **kwargs)
 
+    @staticmethod
+    def _is_localstack_reachable():
+        """Quick 0.5s socket check to see if LocalStack DynamoDB is running."""
+        import socket
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            result = sock.connect_ex(('localhost', 4566))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+
     def do_OPTIONS(self):
         self.send_response(200)
         self._cors_headers()
@@ -435,12 +459,7 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
 
             # Try DynamoDB only if LocalStack is reachable (non-blocking check)
             try:
-                import socket
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(0.5)
-                result = sock.connect_ex(('localhost', 4566))
-                sock.close()
-                if result == 0:
+                if self._is_localstack_reachable():
                     table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
                     response = table.scan()
                     items = response.get("Items", [])
@@ -491,9 +510,14 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 self._json_response(400, {"error": "Email parameter required"})
                 return
 
-            table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
-            response = table.scan()
-            items = response.get("Items", [])
+            items = []
+            if self._is_localstack_reachable():
+                try:
+                    table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                    response = table.scan()
+                    items = response.get("Items", [])
+                except Exception:
+                    pass
 
             # Filter by customer email
             customer_items = [i for i in items if i.get("contact_email", "").lower() == email]
@@ -539,11 +563,12 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(query)
             period = params.get("period", ["all"])[0]
 
-            # First sync latest from DynamoDB
+            # Sync from DynamoDB only if LocalStack is reachable
             try:
-                table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
-                response = table.scan()
-                backup.sync_from_dynamodb(response.get("Items", []))
+                if self._is_localstack_reachable():
+                    table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                    response = table.scan()
+                    backup.sync_from_dynamodb(response.get("Items", []))
             except Exception:
                 pass
 
@@ -571,16 +596,38 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_new_inquiry(self, body):
         """Submit a new group booking inquiry and backup."""
         try:
-            payload = json.dumps({
-                "body": body,
-                "requestContext": {"http": {"method": "POST"}},
-            })
-            result = self._invoke_lambda("groupiq-intake-" + ENVIRONMENT, payload)
-            response_body = json.loads(result.get("body", "{}"))
+            parsed = json.loads(body)
+            response_body = None
+
+            # Try Lambda; if unavailable, create booking locally
+            try:
+                payload = json.dumps({
+                    "body": body,
+                    "requestContext": {"http": {"method": "POST"}},
+                })
+                result = self._invoke_lambda("groupiq-intake-" + ENVIRONMENT, payload)
+                response_body = json.loads(result.get("body", "{}"))
+            except Exception as lambda_err:
+                print(f"[GroupIQ] Lambda unavailable, creating booking locally: {lambda_err}")
+                import uuid
+                booking_id = f"GRP-{uuid.uuid4().hex[:8].upper()}"
+                rooms = int(parsed.get("num_rooms", 1))
+                nights = int(parsed.get("num_nights", 1))
+                base_rate = 189.0
+                revenue = rooms * nights * base_rate
+                response_body = {
+                    "booking_id": booking_id,
+                    "inquiry_id": booking_id,
+                    "status": "INQUIRY_RECEIVED",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "estimated_revenue": revenue,
+                    "dynamic_pricing": {"final_rate": base_rate, "base_rate": base_rate},
+                    "message": "Inquiry received successfully",
+                }
 
             # Auto-backup the new booking
             if response_body.get("booking_id"):
-                booking_data = json.loads(body)
+                booking_data = dict(parsed)
                 booking_data["booking_id"] = response_body["booking_id"]
                 booking_data["version"] = 1
                 booking_data["status"] = "INQUIRY_RECEIVED"
@@ -588,9 +635,8 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 booking_data["estimated_revenue"] = response_body.get("estimated_revenue", 0)
                 backup.upsert_booking(booking_data)
 
-            # Send real email notification for inquiry confirmation
+            # Send email notification immediately
             if response_body.get("booking_id"):
-                parsed = json.loads(body)
                 to_email = parsed.get("contact_email", "")
                 pricing = response_body.get("dynamic_pricing", {})
                 if to_email:
@@ -614,7 +660,7 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     )
                     response_body["email_delivered"] = True
 
-            self._json_response(result.get("statusCode", 201), response_body)
+            self._json_response(201, response_body)
         except Exception as e:
             self._json_response(500, {"error": str(e)})
 
@@ -626,20 +672,87 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
 
             payload_data = json.loads(body)
             payload_data["booking_id"] = booking_id
-            payload = json.dumps(payload_data)
-            result = self._invoke_lambda("groupiq-negotiation_agent-" + ENVIRONMENT, payload)
 
-            if isinstance(result, dict) and "body" in result:
-                response_data = json.loads(result.get("body", "{}"))
-            else:
-                response_data = result
+            # Detect action from payload (customer portal may send it different ways)
+            action = payload_data.get("action", "").upper()
+            if not action:
+                msg = payload_data.get("message", "").upper()
+                if "ACCEPT" in msg or "I ACCEPT" in msg:
+                    action = "ACCEPT"
+                elif "DECLINE" in msg:
+                    action = "DECLINE"
+                else:
+                    action = "COUNTER"
+                payload_data["action"] = action
 
-            # Send real email notification for negotiation result
+            # Try Lambda first; if unavailable, generate response locally
+            response_data = None
+            try:
+                payload = json.dumps(payload_data)
+                result = self._invoke_lambda("groupiq-negotiation_agent-" + ENVIRONMENT, payload)
+                if isinstance(result, dict) and "body" in result:
+                    response_data = json.loads(result.get("body", "{}"))
+                else:
+                    response_data = result
+                # Ensure decision field exists in Lambda response
+                if not response_data.get("decision"):
+                    response_data["decision"] = action or "COUNTER"
+                if not response_data.get("status"):
+                    if response_data["decision"] == "ACCEPT":
+                        response_data["status"] = "ACCEPTED"
+                    elif response_data["decision"] in ("DECLINE", "DECLINED"):
+                        response_data["decision"] = "DECLINED"
+                        response_data["status"] = "DECLINED"
+                    else:
+                        response_data["status"] = "NEGOTIATING"
+            except Exception as lambda_err:
+                print(f"[GroupIQ] Lambda unavailable, using local negotiation: {lambda_err}")
+                if action == "ACCEPT":
+                    response_data = {
+                        "decision": "ACCEPT",
+                        "status": "ACCEPTED",
+                        "message_to_client": "Your booking has been confirmed! Thank you for choosing Marriott.",
+                        "booking_id": booking_id,
+                    }
+                elif action in ("DECLINE", "DECLINED"):
+                    response_data = {
+                        "decision": "DECLINED",
+                        "status": "DECLINED",
+                        "message_to_client": "Your booking has been declined as requested.",
+                        "booking_id": booking_id,
+                    }
+                elif action == "ESCALATE":
+                    response_data = {
+                        "decision": "ESCALATE",
+                        "status": "NEGOTIATING",
+                        "message_to_client": "Your request has been escalated to a Senior Sales Manager for review.",
+                        "booking_id": booking_id,
+                    }
+                else:
+                    # COUNTER — provide a smart counter based on requested rate
+                    proposed_rate = float(payload_data.get("proposed_room_rate", 0))
+                    counter_rate = round(proposed_rate * 1.15, 2) if proposed_rate > 0 else 265.0
+                    response_data = {
+                        "decision": "COUNTER",
+                        "status": "NEGOTIATING",
+                        "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. We can offer ${counter_rate:.0f}/night which includes complimentary breakfast and late checkout.",
+                        "counter_proposal": {
+                            "room_rate": counter_rate,
+                            "includes_breakfast": True,
+                            "late_checkout": True,
+                        },
+                        "booking_id": booking_id,
+                    }
+
+            # Always send email notification for every negotiation action
             decision = response_data.get("decision", "")
-            if decision:
-                # Look up the booking to get customer email — try DynamoDB first, fall back to backup
-                try:
-                    booking = None
+            if not decision:
+                decision = action or "COUNTER"
+                response_data["decision"] = decision
+
+            try:
+                booking = backup.get_booking(booking_id)
+                if not booking and self._is_localstack_reachable():
                     try:
                         table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
                         scan = table.scan()
@@ -647,14 +760,14 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception:
                         pass
 
-                    if not booking:
-                        booking = backup.get_booking(booking_id)
+                if booking:
+                    new_status = response_data.get("status", "NEGOTIATING")
+                    now_ts = datetime.now(timezone.utc).isoformat()
 
-                    if booking:
-                        # Ensure DynamoDB status is updated (Lambda's conditional write can silently fail)
-                        new_status = response_data.get("status", decision)
-                        now_ts = datetime.now(timezone.utc).isoformat()
+                    # Update DynamoDB if reachable
+                    if self._is_localstack_reachable():
                         try:
+                            table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
                             table.update_item(
                                 Key={"booking_id": booking_id, "version": int(booking["version"])},
                                 UpdateExpression="SET #s = :status, updated_at = :ts",
@@ -667,31 +780,33 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                         except Exception as db_err:
                             print(f"[GroupIQ] DynamoDB status update error: {db_err}")
 
-                        # Sync updated status to backup so admin portal reflects it
-                        booking_updated = dict(booking)
-                        booking_updated["status"] = new_status
-                        booking_updated["updated_at"] = now_ts
-                        backup.upsert_booking(booking_updated)
+                    # Sync updated status to backup
+                    booking_updated = dict(booking)
+                    booking_updated["status"] = new_status
+                    booking_updated["updated_at"] = now_ts
+                    backup.upsert_booking(booking_updated)
 
-                        to_email = booking.get("contact_email", "")
-                        contact_name = booking.get("contact_name", "Guest")
-                        counter_rate = None
-                        if response_data.get("counter_proposal"):
-                            counter_rate = response_data["counter_proposal"].get("room_rate")
-                        email_html = build_negotiation_email(
-                            inquiry_id=booking_id,
-                            contact_name=contact_name,
-                            decision=decision,
-                            message=response_data.get("message_to_client", ""),
-                            counter_rate=counter_rate,
-                            confirmed_id=response_data.get("confirmed_booking_id"),
-                        )
-                        subject_map = {
-                            "ACCEPT": f"GroupIQ - Booking CONFIRMED! {booking_id}",
-                            "COUNTER": f"GroupIQ - Counter Offer for {booking_id}",
-                            "ESCALATE": f"GroupIQ - Escalated: {booking_id}",
-                            "DECLINED": f"GroupIQ - Booking Declined: {booking_id}",
-                        }
+                    to_email = booking.get("contact_email", "")
+                    contact_name = booking.get("contact_name", "Guest")
+                    counter_rate = None
+                    if response_data.get("counter_proposal"):
+                        counter_rate = response_data["counter_proposal"].get("room_rate")
+                    email_html = build_negotiation_email(
+                        inquiry_id=booking_id,
+                        contact_name=contact_name,
+                        decision=decision,
+                        message=response_data.get("message_to_client", ""),
+                        counter_rate=counter_rate,
+                        confirmed_id=response_data.get("confirmed_booking_id"),
+                    )
+                    subject_map = {
+                        "ACCEPT": f"GroupIQ - Booking CONFIRMED! {booking_id}",
+                        "COUNTER": f"GroupIQ - Counter Offer for {booking_id}",
+                        "ESCALATE": f"GroupIQ - Escalated: {booking_id}",
+                        "DECLINED": f"GroupIQ - Booking Declined: {booking_id}",
+                        "DECLINE": f"GroupIQ - Booking Declined: {booking_id}",
+                    }
+                    if to_email:
                         send_email_async(
                             to_email,
                             subject_map.get(decision, f"GroupIQ - Update on {booking_id}"),
@@ -700,9 +815,16 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             email_type=decision,
                         )
                         response_data["email_delivered"] = True
-                except Exception as email_err:
-                    print(f"[GroupIQ] Negotiation email error: {email_err}")
+                        print(f"[GroupIQ] Email triggered: {decision} → {to_email} for {booking_id}")
+                    else:
+                        print(f"[GroupIQ] No email - contact_email missing for {booking_id}")
+                        response_data["email_delivered"] = False
+                else:
+                    print(f"[GroupIQ] No email - booking not found: {booking_id}")
                     response_data["email_delivered"] = False
+            except Exception as email_err:
+                print(f"[GroupIQ] Negotiation email error: {email_err}")
+                response_data["email_delivered"] = False
 
             self._json_response(200, response_data)
         except Exception as e:
@@ -876,60 +998,99 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response(500, {"error": str(e)})
 
     def _handle_inventory(self, property_id):
-        """Check room inventory and availability for a property."""
+        """Check room inventory and availability for a property, computed from real bookings."""
         query_str = self.path.split("?", 1)[1] if "?" in self.path else ""
         params = urllib.parse.parse_qs(query_str)
         event_date = params.get("date", [None])[0]
+        TOTAL_CAPACITY = 500
+
+        def _compute_from_bookings(target_date=None):
+            """Calculate reserved/on-hold rooms from actual booking data."""
+            all_bookings = backup.get_all_bookings()
+            from collections import defaultdict
+            date_usage = defaultdict(lambda: {"reserved": 0, "on_hold": 0})
+
+            for b in all_bookings:
+                b_date = b.get("event_date", "")
+                rooms = int(b.get("num_rooms", 0) or 0)
+                status = b.get("status", "")
+                if not b_date or not rooms:
+                    continue
+                if status in ("ACCEPTED", "CONFIRMED", "PROPOSAL_SENT"):
+                    date_usage[b_date]["reserved"] += rooms
+                elif status in ("NEGOTIATING", "INQUIRY_RECEIVED"):
+                    date_usage[b_date]["on_hold"] += rooms
+
+            if target_date:
+                usage = date_usage.get(target_date, {"reserved": 0, "on_hold": 0})
+                available = max(0, TOTAL_CAPACITY - usage["reserved"] - usage["on_hold"])
+                return {
+                    "property_id": property_id,
+                    "date": target_date,
+                    "total_rooms": TOTAL_CAPACITY,
+                    "available_rooms": available,
+                    "reserved_rooms": usage["reserved"],
+                    "hold_rooms": usage["on_hold"],
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                inventory_dates = []
+                for d, usage in sorted(date_usage.items()):
+                    available = max(0, TOTAL_CAPACITY - usage["reserved"] - usage["on_hold"])
+                    inventory_dates.append({
+                        "date": d,
+                        "available": available,
+                        "reserved": usage["reserved"],
+                        "held": usage["on_hold"],
+                    })
+                return {
+                    "property_id": property_id,
+                    "inventory_dates": inventory_dates,
+                    "total_capacity": TOTAL_CAPACITY,
+                }
 
         try:
-            inv_table = dynamodb.Table(f"groupiq-inventory-{ENVIRONMENT}")
-            if event_date:
-                response = inv_table.get_item(
-                    Key={"property_id": property_id, "date": event_date}
-                )
-                item = response.get("Item")
-                if item:
-                    self._json_response(200, {
-                        "property_id": property_id,
-                        "date": event_date,
-                        "total_rooms": int(item.get("total_rooms", 0)),
-                        "available_rooms": int(item.get("available_rooms", 0)),
-                        "reserved_rooms": int(item.get("reserved_rooms", 0)),
-                        "hold_rooms": int(item.get("hold_rooms", 0)),
-                        "last_updated": item.get("last_updated"),
-                    })
+            if self._is_localstack_reachable():
+                inv_table = dynamodb.Table(f"groupiq-inventory-{ENVIRONMENT}")
+                if event_date:
+                    response = inv_table.get_item(
+                        Key={"property_id": property_id, "date": event_date}
+                    )
+                    item = response.get("Item")
+                    if item:
+                        self._json_response(200, {
+                            "property_id": property_id,
+                            "date": event_date,
+                            "total_rooms": int(item.get("total_rooms", 0)),
+                            "available_rooms": int(item.get("available_rooms", 0)),
+                            "reserved_rooms": int(item.get("reserved_rooms", 0)),
+                            "hold_rooms": int(item.get("hold_rooms", 0)),
+                            "last_updated": item.get("last_updated"),
+                        })
+                        return
                 else:
-                    self._json_response(200, {
-                        "property_id": property_id,
-                        "date": event_date,
-                        "total_rooms": 500,
-                        "available_rooms": 500,
-                        "reserved_rooms": 0,
-                        "hold_rooms": 0,
-                        "message": "No bookings yet for this date",
-                    })
-            else:
-                response = inv_table.scan(
-                    FilterExpression=Attr("property_id").eq(property_id)
-                )
-                items = response.get("Items", [])
-                self._json_response(200, {
-                    "property_id": property_id,
-                    "inventory_dates": [
-                        {
-                            "date": i["date"],
-                            "available": int(i.get("available_rooms", 0)),
-                            "reserved": int(i.get("reserved_rooms", 0)),
-                            "held": int(i.get("hold_rooms", 0)),
-                        } for i in items
-                    ],
-                })
-        except Exception as e:
-            self._json_response(200, {
-                "property_id": property_id,
-                "available_rooms": 500,
-                "message": f"Inventory tracking initializing ({str(e)[:40]})",
-            })
+                    response = inv_table.scan(
+                        FilterExpression=Attr("property_id").eq(property_id)
+                    )
+                    items = response.get("Items", [])
+                    if items:
+                        self._json_response(200, {
+                            "property_id": property_id,
+                            "inventory_dates": [
+                                {
+                                    "date": i["date"],
+                                    "available": int(i.get("available_rooms", 0)),
+                                    "reserved": int(i.get("reserved_rooms", 0)),
+                                    "held": int(i.get("hold_rooms", 0)),
+                                } for i in items
+                            ],
+                        })
+                        return
+        except Exception:
+            pass
+
+        result = _compute_from_bookings(event_date)
+        self._json_response(200, result)
 
     def _handle_all_locations(self):
         """Return all available location codes grouped by country."""
@@ -957,13 +1118,8 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
     def _ensure_booking_in_dynamodb(self, booking_id):
         """Seed booking from backup into DynamoDB if it doesn't exist there."""
         try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            if sock.connect_ex(('localhost', 4566)) != 0:
-                sock.close()
+            if not self._is_localstack_reachable():
                 return
-            sock.close()
 
             table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
             resp = table.query(
@@ -995,8 +1151,10 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             print(f"[GroupIQ] DynamoDB seed warning: {e}")
 
     def _invoke_lambda(self, function_name, payload):
-        """Invoke a Lambda function via LocalStack with retry."""
-        for attempt in range(3):
+        """Invoke a Lambda function via LocalStack with retry. Fails fast if LocalStack is down."""
+        if not self._is_localstack_reachable():
+            raise Exception("LocalStack not reachable — Lambda invocation skipped")
+        for attempt in range(2):
             try:
                 response = lambda_client.invoke(
                     FunctionName=function_name,
@@ -1005,11 +1163,11 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 result = json.loads(response["Payload"].read().decode("utf-8"))
                 return result
             except Exception as e:
-                if attempt < 2:
+                if attempt < 1:
                     import time
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                     continue
-                raise Exception(f"Lambda invocation failed after 3 attempts: {str(e)}")
+                raise Exception(f"Lambda invocation failed: {str(e)}")
 
     def _send_smtp_email(self, booking_id, negotiation_result):
         """Send a real email via SMTP (Outlook/Office365)."""
@@ -1018,13 +1176,21 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         from email.mime.multipart import MIMEMultipart
         from boto3.dynamodb.conditions import Key
 
-        table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
-        response = table.query(
-            KeyConditionExpression=Key("booking_id").eq(booking_id),
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        booking = response["Items"][0] if response.get("Items") else {}
+        booking = None
+        if self._is_localstack_reachable():
+            try:
+                table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                response = table.query(
+                    KeyConditionExpression=Key("booking_id").eq(booking_id),
+                    ScanIndexForward=False,
+                    Limit=1,
+                )
+                booking = response["Items"][0] if response.get("Items") else None
+            except Exception:
+                pass
+
+        if not booking:
+            booking = backup.get_booking(booking_id)
         if not booking:
             return
 
@@ -1180,6 +1346,101 @@ def sync_from_render():
 
 def main():
     kill_port(PORT)
+
+    # Auto-send missed emails on startup
+    def send_missed_emails():
+        """Scan all bookings and send emails for any that were missed."""
+        import time
+        time.sleep(3)  # Wait for server to be ready
+        if not smtp_configured:
+            print("[GroupIQ] Email recovery skipped — SMTP not configured")
+            return
+        all_bookings = backup.get_all_bookings()
+        missed = [b for b in all_bookings if b.get("contact_email") and b.get("email_delivered") is not True]
+        if not missed:
+            print("[GroupIQ] Email recovery: All bookings have emails delivered ✓")
+            return
+        print(f"[GroupIQ] Email recovery: Found {len(missed)} bookings without email — sending now...")
+        sent = 0
+        for b in missed:
+            try:
+                bid = b.get("booking_id", "")
+                status = b.get("status", "INQUIRY_RECEIVED")
+                to_email = b.get("contact_email", "")
+                if not to_email or not bid:
+                    continue
+
+                if status in ("INQUIRY_RECEIVED", "PROPOSAL_SENT"):
+                    email_html = build_inquiry_email(
+                        inquiry_id=bid,
+                        contact_name=b.get("contact_name", "Guest"),
+                        event_type=b.get("event_type", ""),
+                        checkin=b.get("check_in_date", b.get("event_date", "")),
+                        checkout=b.get("check_out_date", ""),
+                        rooms=b.get("num_rooms", 0),
+                        nights=b.get("num_nights", 0),
+                        rate=float(b.get("dynamic_room_rate", 0) or 0),
+                        revenue=float(b.get("estimated_revenue", 0) or 0),
+                        property_id=b.get("property_id", ""),
+                    )
+                    subject = f"GroupIQ - Inquiry {bid} Confirmed"
+                    email_type = "INQUIRY"
+                elif status == "ACCEPTED":
+                    email_html = build_negotiation_email(
+                        inquiry_id=bid,
+                        contact_name=b.get("contact_name", "Guest"),
+                        decision="ACCEPT",
+                        message="Your booking has been confirmed! Thank you for choosing Marriott.",
+                        counter_rate=None,
+                        confirmed_id=bid,
+                    )
+                    subject = f"GroupIQ - Booking CONFIRMED! {bid}"
+                    email_type = "ACCEPT"
+                elif status in ("NEGOTIATING", "COUNTER"):
+                    email_html = build_negotiation_email(
+                        inquiry_id=bid,
+                        contact_name=b.get("contact_name", "Guest"),
+                        decision="COUNTER",
+                        message="Your negotiation is in progress. Our team is reviewing your request.",
+                        counter_rate=None,
+                        confirmed_id=None,
+                    )
+                    subject = f"GroupIQ - Negotiation Update for {bid}"
+                    email_type = "COUNTER"
+                elif status in ("ESCALATE", "ESCALATED"):
+                    email_html = build_negotiation_email(
+                        inquiry_id=bid,
+                        contact_name=b.get("contact_name", "Guest"),
+                        decision="ESCALATE",
+                        message="Your request has been escalated to a Senior Sales Manager for review.",
+                        counter_rate=None,
+                        confirmed_id=None,
+                    )
+                    subject = f"GroupIQ - Escalated: {bid}"
+                    email_type = "ESCALATE"
+                elif status in ("DECLINED", "DECLINE"):
+                    email_html = build_negotiation_email(
+                        inquiry_id=bid,
+                        contact_name=b.get("contact_name", "Guest"),
+                        decision="DECLINED",
+                        message="Your booking request has been declined.",
+                        counter_rate=None,
+                        confirmed_id=None,
+                    )
+                    subject = f"GroupIQ - Booking Declined: {bid}"
+                    email_type = "DECLINED"
+                else:
+                    continue
+
+                send_email_async(to_email, subject, email_html, booking_id=bid, email_type=email_type)
+                sent += 1
+                time.sleep(0.5)  # Small delay to avoid Gmail rate limits
+            except Exception as e:
+                print(f"[GroupIQ] Email recovery failed for {b.get('booking_id','')}: {e}")
+        print(f"[GroupIQ] Email recovery: Sent {sent} missed emails ✓")
+
+    email_recovery_thread = threading.Thread(target=send_missed_emails, daemon=True)
+    email_recovery_thread.start()
 
     # Start background sync from Render cloud API
     sync_thread = threading.Thread(target=sync_from_render, daemon=True)

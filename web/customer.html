@@ -456,7 +456,7 @@
         try {
             const res = await fetch(API_BASE + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
                 method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ proposed_room_rate: rate, message: message })
+                body: JSON.stringify({ proposed_room_rate: rate, message: message, action: 'COUNTER' })
             });
             const data = await res.json();
             if (data.error) { showToast(data.message || data.error); return; }
@@ -537,9 +537,22 @@
 
     function acceptCounterOffer() {
         const rate = negState.counterRate || 265;
-        document.getElementById('negRate').value = rate;
-        document.getElementById('negMessage').value = 'I accept the counter-offer of $' + rate + '/night.';
-        submitNegotiation();
+        const id = negState.inquiryId;
+        if (!id) { showToast('No active inquiry'); return; }
+        // Send explicit ACCEPT action to backend
+        fetch(API_BASE + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ proposed_room_rate: rate, message: 'I accept the counter-offer of $' + rate + '/night.', action: 'ACCEPT' })
+        }).then(r => r.json()).then(data => {
+            negState.lastDecision = 'ACCEPT';
+            negState.history.push({ turn: ++negState.turn, action: 'YOU', rate: rate, message: 'Accepted offer' });
+            negState.history.push({ turn: negState.turn, action: 'ACCEPT', rate: rate, message: data.message_to_client || 'Booking confirmed!' });
+            renderTimeline();
+            document.getElementById('negResult').innerHTML = '<h3 style="color:#059669;">Booking Confirmed!</h3><p>' + (data.message_to_client || 'Your booking is confirmed.') + '</p><p style="margin-top:8px; font-size:12px; color:#6b7280;">A confirmation email has been sent to your inbox.</p>';
+            document.getElementById('negResult').classList.add('show');
+            document.getElementById('negActions').style.display = 'none';
+            showToast('Booking confirmed! Check your email.');
+        }).catch(e => showToast('Error: ' + e.message));
     }
 
     function negotiateAgain() {

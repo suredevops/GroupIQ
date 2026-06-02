@@ -569,7 +569,7 @@
                 const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ proposed_room_rate: rate, message: message })
+                    body: JSON.stringify({ proposed_room_rate: rate, message: message, action: 'COUNTER' })
                 });
                 if (res.ok) {
                     const data = await res.json();
@@ -640,11 +640,34 @@
         showToast(emailSent ? decision + ' — Email sent!' : 'Response: ' + decision);
     }
 
-    function acceptCounterOffer() {
+    async function acceptCounterOffer() {
         const rate = negState.counterRate || 265;
-        document.getElementById('negRate').value = rate;
-        document.getElementById('negMessage').value = 'I accept the counter-offer of $' + rate + '/night.';
-        submitNegotiation();
+        const id = negState.inquiryId;
+        if (!id) { showToast('No active inquiry'); return; }
+
+        let emailSent = false;
+        for (const endpoint of API_ENDPOINTS) {
+            try {
+                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ proposed_room_rate: rate, message: 'I accept the offer of $' + rate + '/night.', action: 'ACCEPT' })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    emailSent = data.email_delivered || false;
+                    negState.lastDecision = 'ACCEPT';
+                    negState.history.push({ turn: ++negState.turn, action: 'YOU', rate: rate, message: 'Accepted offer of $' + rate + '/night' });
+                    negState.history.push({ turn: negState.turn, action: 'ACCEPT', rate: rate, message: data.message_to_client || 'Booking confirmed!' });
+                    renderTimeline();
+                    document.getElementById('negResult').innerHTML = '<h3 style="color:#059669;">✓ Booking Confirmed!</h3><p>' + (data.message_to_client || 'Your booking has been confirmed.') + '</p>' + (emailSent ? '<p style="margin-top:8px; font-size:12px; color:#059669;">✓ Confirmation email sent to your inbox</p>' : '');
+                    document.getElementById('negResult').classList.add('show');
+                    document.getElementById('negActions').classList.remove('show');
+                    showToast('Booking confirmed! Check your email.');
+                    break;
+                }
+            } catch(e) { /* endpoint not reachable */ }
+        }
     }
 
     function negotiateAgain() {
