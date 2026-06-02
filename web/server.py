@@ -427,14 +427,26 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 pass
 
     def _handle_get_bookings(self):
-        """Scan all bookings from DynamoDB and merge with backup for accuracy."""
+        """Return all bookings — serves from backup instantly, syncs DynamoDB in background."""
         try:
-            table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
-            response = table.scan()
-            items = response.get("Items", [])
+            # Serve from backup immediately for fast response
+            backed_up = backup.get_all_bookings()
+            items = []
 
-            # Sync DynamoDB items to backup (respects updated_at for same version)
-            backup.sync_from_dynamodb(items)
+            # Try DynamoDB only if LocalStack is reachable (non-blocking check)
+            try:
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.5)
+                result = sock.connect_ex(('localhost', 4566))
+                sock.close()
+                if result == 0:
+                    table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                    response = table.scan()
+                    items = response.get("Items", [])
+                    backup.sync_from_dynamodb(items)
+            except Exception:
+                pass
 
             # Deduplicate by booking_id (keep latest version)
             latest = {}
@@ -945,6 +957,14 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
     def _ensure_booking_in_dynamodb(self, booking_id):
         """Seed booking from backup into DynamoDB if it doesn't exist there."""
         try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.5)
+            if sock.connect_ex(('localhost', 4566)) != 0:
+                sock.close()
+                return
+            sock.close()
+
             table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
             resp = table.query(
                 KeyConditionExpression=Key("booking_id").eq(booking_id),
