@@ -55,6 +55,78 @@ session = boto3.Session(
 lambda_client = session.client("lambda", endpoint_url=LOCALSTACK_URL)
 dynamodb = session.resource("dynamodb", endpoint_url=LOCALSTACK_URL)
 
+# AWS Bedrock client for AI-powered negotiations
+BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-pro-v1:0")
+_bedrock_client = None
+_bedrock_enabled = bool(os.environ.get("AWS_ACCESS_KEY_ID", "")) and os.environ.get("AWS_ACCESS_KEY_ID", "") != "test"
+
+def get_bedrock_client():
+    """Get or create Bedrock runtime client with real AWS credentials."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        bedrock_session = boto3.Session(
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+            aws_session_token=os.environ.get("AWS_SESSION_TOKEN"),
+            region_name="us-east-1",
+        )
+        _bedrock_client = bedrock_session.client("bedrock-runtime", verify=False)
+    return _bedrock_client
+
+def invoke_bedrock_negotiation(booking, counter_offer):
+    """Use AWS Bedrock AI to evaluate a counter-offer and decide next action."""
+    client = get_bedrock_client()
+    
+    system_prompt = """You are a Marriott hotel revenue management AI. Evaluate counter-offers for group bookings.
+Respond ONLY with valid JSON: {"decision": "ACCEPT" or "COUNTER" or "ESCALATE", "message_to_client": "professional message to the customer", "counter_proposal": {"room_rate": number, "includes_breakfast": true/false, "late_checkout": true/false}, "reasoning": "internal reasoning"}
+Rules:
+- Max 15% discount from base rate
+- ACCEPT if requested rate is within 15% of base rate
+- COUNTER with value-adds (breakfast, late checkout) if request is 15-25% below base
+- ESCALATE if request is >25% below base rate (unreasonable)
+- Always be professional and courteous in message_to_client"""
+
+    base_rate = float(booking.get("base_room_rate", booking.get("dynamic_room_rate", 250)))
+    user_msg = f"""Evaluate this counter-offer:
+- Base Room Rate: ${base_rate}/night
+- Rooms: {booking.get('num_rooms', 0)} | Nights: {booking.get('num_nights', 0)}
+- Event: {booking.get('event_type', 'event')}, Date: {booking.get('event_date', 'TBD')}
+- Client Name: {booking.get('contact_name', 'Guest')}
+- Client Requested Rate: ${counter_offer.get('proposed_room_rate', 'Not specified')}/night
+- Client Message: {counter_offer.get('message', 'No message')}
+- Action requested: {counter_offer.get('action', 'COUNTER')}
+Max Allowed Discount: 15% (floor rate: ${base_rate * 0.85:.0f}/night)"""
+
+    body = json.dumps({
+        "messages": [{"role": "user", "content": [{"text": user_msg}]}],
+        "system": [{"text": system_prompt}],
+        "inferenceConfig": {"maxTokens": 1024, "temperature": 0.2}
+    })
+
+    response = client.invoke_model(
+        modelId=BEDROCK_MODEL_ID,
+        contentType="application/json",
+        accept="application/json",
+        body=body
+    )
+    result = json.loads(response["body"].read())
+    ai_text = result["output"]["message"]["content"][0]["text"]
+    
+    # Parse JSON from response (handle markdown code blocks)
+    if "```json" in ai_text:
+        ai_text = ai_text.split("```json")[1].split("```")[0].strip()
+    elif "```" in ai_text:
+        ai_text = ai_text.split("```")[1].split("```")[0].strip()
+    
+    return json.loads(ai_text)
+
+if _bedrock_enabled:
+    print(f"[GroupIQ] AWS Bedrock AI ENABLED — Model: {BEDROCK_MODEL_ID}")
+else:
+    print(f"[GroupIQ] AWS Bedrock AI disabled — using local fallback (set real AWS_ACCESS_KEY_ID to enable)")
+
 # SMTP email setup
 smtp_configured = bool(SMTP_USERNAME and SMTP_PASSWORD)
 if smtp_configured:
@@ -598,6 +670,7 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         try:
             parsed = json.loads(body)
             response_body = None
+            booking_id = None
 
             # Try Lambda; if unavailable, create booking locally
             try:
@@ -606,14 +679,26 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     "requestContext": {"http": {"method": "POST"}},
                 })
                 result = self._invoke_lambda("groupiq-intake-" + ENVIRONMENT, payload)
-                response_body = json.loads(result.get("body", "{}"))
+                raw_body = result.get("body", "{}")
+                if isinstance(raw_body, str):
+                    response_body = json.loads(raw_body)
+                elif isinstance(raw_body, dict):
+                    response_body = raw_body
+                else:
+                    response_body = {}
+                booking_id = response_body.get("booking_id") or response_body.get("inquiry_id")
             except Exception as lambda_err:
                 print(f"[GroupIQ] Lambda unavailable, creating booking locally: {lambda_err}")
-                import uuid
-                booking_id = f"GRP-{uuid.uuid4().hex[:8].upper()}"
+
+            # Local fallback — always generate a booking if Lambda didn't
+            if not booking_id:
+                import uuid, hashlib
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d")
+                uid = hashlib.md5(f"{parsed.get('contact_email','')}{ts}{uuid.uuid4().hex}".encode()).hexdigest()[:8].upper()
+                booking_id = f"INQ-{ts}-{uid}"
                 rooms = int(parsed.get("num_rooms", 1))
                 nights = int(parsed.get("num_nights", 1))
-                base_rate = 189.0
+                base_rate = float(parsed.get("base_room_rate", 189))
                 revenue = rooms * nights * base_rate
                 response_body = {
                     "booking_id": booking_id,
@@ -626,42 +711,55 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 }
 
             # Auto-backup the new booking
-            if response_body.get("booking_id"):
-                booking_data = dict(parsed)
-                booking_data["booking_id"] = response_body["booking_id"]
-                booking_data["version"] = 1
-                booking_data["status"] = "INQUIRY_RECEIVED"
-                booking_data["created_at"] = response_body.get("created_at", datetime.now(timezone.utc).isoformat())
-                booking_data["estimated_revenue"] = response_body.get("estimated_revenue", 0)
-                backup.upsert_booking(booking_data)
+            booking_data = dict(parsed)
+            booking_data["booking_id"] = booking_id
+            booking_data["version"] = 1
+            booking_data["status"] = "INQUIRY_RECEIVED"
+            booking_data["created_at"] = response_body.get("created_at", datetime.now(timezone.utc).isoformat())
+            booking_data["estimated_revenue"] = response_body.get("estimated_revenue", 0)
+            backup.upsert_booking(booking_data)
 
-            # Send email notification immediately
-            if response_body.get("booking_id"):
-                to_email = parsed.get("contact_email", "")
-                pricing = response_body.get("dynamic_pricing", {})
-                if to_email:
+            # GUARANTEED email notification — fires regardless of Lambda result
+            to_email = parsed.get("contact_email", "")
+            if to_email:
+                try:
+                    pricing = response_body.get("dynamic_pricing") or {}
+                    rate = float(pricing.get("final_rate", 0)) or float(parsed.get("base_room_rate", 0)) or float(parsed.get("dynamic_room_rate", 0))
+                    revenue = float(response_body.get("estimated_revenue", 0)) or (int(parsed.get("num_rooms", 1)) * int(parsed.get("num_nights", 1)) * rate)
                     email_html = build_inquiry_email(
-                        inquiry_id=response_body.get("inquiry_id", response_body["booking_id"]),
+                        inquiry_id=booking_id,
                         contact_name=parsed.get("contact_name", "Guest"),
                         event_type=parsed.get("event_type", ""),
                         checkin=parsed.get("check_in_date", parsed.get("event_date", "")),
                         checkout=parsed.get("check_out_date", ""),
                         rooms=parsed.get("num_rooms", 0),
                         nights=parsed.get("num_nights", 0),
-                        rate=float(pricing.get("final_rate", 0)),
-                        revenue=float(response_body.get("estimated_revenue", 0)),
+                        rate=rate,
+                        revenue=revenue,
                         property_id=parsed.get("property_id", ""),
                     )
                     send_email_async(
                         to_email,
-                        f"GroupIQ - Inquiry {response_body.get('inquiry_id', response_body['booking_id'])} Confirmed",
+                        f"GroupIQ - Inquiry {booking_id} Confirmed",
                         email_html,
-                        booking_id=response_body["booking_id"],
+                        booking_id=booking_id,
                     )
                     response_body["email_delivered"] = True
+                except Exception as email_err:
+                    print(f"[EMAIL-BUILD-ERROR] {booking_id}: {email_err}")
+                    send_email_async(
+                        to_email,
+                        f"GroupIQ - Booking {booking_id} Received",
+                        f"<h2>Booking Confirmed</h2><p>Dear {parsed.get('contact_name','Guest')}, your inquiry <b>{booking_id}</b> has been received. Our team will contact you shortly.</p>",
+                        booking_id=booking_id,
+                    )
+                    response_body["email_delivered"] = True
+            else:
+                print(f"[EMAIL-SKIP] {booking_id}: No contact_email provided")
 
             self._json_response(201, response_body)
         except Exception as e:
+            print(f"[INQUIRY-ERROR] {e}")
             self._json_response(500, {"error": str(e)})
 
     def _handle_negotiate(self, booking_id, body):
@@ -706,7 +804,7 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     else:
                         response_data["status"] = "NEGOTIATING"
             except Exception as lambda_err:
-                print(f"[GroupIQ] Lambda unavailable, using local negotiation: {lambda_err}")
+                print(f"[GroupIQ] Lambda unavailable: {lambda_err}")
                 if action == "ACCEPT":
                     response_data = {
                         "decision": "ACCEPT",
@@ -721,19 +819,40 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                         "message_to_client": "Your booking has been declined as requested.",
                         "booking_id": booking_id,
                     }
-                elif action == "ESCALATE":
-                    response_data = {
-                        "decision": "ESCALATE",
-                        "status": "NEGOTIATING",
-                        "message_to_client": "Your request has been escalated to a Senior Sales Manager for review.",
-                        "booking_id": booking_id,
-                    }
+                elif _bedrock_enabled and action in ("COUNTER", "ESCALATE", ""):
+                    # Use AWS Bedrock AI for smart negotiation
+                    try:
+                        booking_for_ai = backup.get_booking(booking_id) or {}
+                        ai_result = invoke_bedrock_negotiation(booking_for_ai, payload_data)
+                        response_data = {
+                            "decision": ai_result.get("decision", "COUNTER"),
+                            "status": "ACCEPTED" if ai_result.get("decision") == "ACCEPT" else "NEGOTIATING",
+                            "message_to_client": ai_result.get("message_to_client", ""),
+                            "counter_proposal": ai_result.get("counter_proposal"),
+                            "booking_id": booking_id,
+                            "ai_powered": True,
+                        }
+                        print(f"[GroupIQ] Bedrock AI decision: {response_data['decision']} for {booking_id}")
+                    except Exception as bedrock_err:
+                        print(f"[GroupIQ] Bedrock AI error, using local fallback: {bedrock_err}")
+                        proposed_rate = float(payload_data.get("proposed_room_rate", 0))
+                        counter_rate = round(proposed_rate * 1.15, 2) if proposed_rate > 0 else 265.0
+                        response_data = {
+                            "decision": action or "COUNTER",
+                            "status": "NEGOTIATING",
+                            "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. We can offer ${counter_rate:.0f}/night which includes complimentary breakfast and late checkout.",
+                            "counter_proposal": {
+                                "room_rate": counter_rate,
+                                "includes_breakfast": True,
+                                "late_checkout": True,
+                            },
+                            "booking_id": booking_id,
+                        }
                 else:
-                    # COUNTER — provide a smart counter based on requested rate
                     proposed_rate = float(payload_data.get("proposed_room_rate", 0))
                     counter_rate = round(proposed_rate * 1.15, 2) if proposed_rate > 0 else 265.0
                     response_data = {
-                        "decision": "COUNTER",
+                        "decision": action or "COUNTER",
                         "status": "NEGOTIATING",
                         "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. We can offer ${counter_rate:.0f}/night which includes complimentary breakfast and late checkout.",
                         "counter_proposal": {
