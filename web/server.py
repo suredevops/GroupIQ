@@ -783,62 +783,65 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     action = "COUNTER"
                 payload_data["action"] = action
 
-            # Try Lambda first; if unavailable, generate response locally
             response_data = None
-            try:
-                payload = json.dumps(payload_data)
-                result = self._invoke_lambda("groupiq-negotiation_agent-" + ENVIRONMENT, payload)
-                if isinstance(result, dict) and "body" in result:
-                    response_data = json.loads(result.get("body", "{}"))
-                else:
-                    response_data = result
-                # Ensure decision field exists in Lambda response
-                if not response_data.get("decision"):
-                    response_data["decision"] = action or "COUNTER"
-                if not response_data.get("status"):
-                    if response_data["decision"] == "ACCEPT":
-                        response_data["status"] = "ACCEPTED"
-                    elif response_data["decision"] in ("DECLINE", "DECLINED"):
-                        response_data["decision"] = "DECLINED"
-                        response_data["status"] = "DECLINED"
+
+            # ACCEPT and DECLINE are customer decisions — honor immediately, no AI needed
+            if action == "ACCEPT":
+                accepted_rate = float(payload_data.get("proposed_room_rate", 0))
+                response_data = {
+                    "decision": "ACCEPT",
+                    "status": "ACCEPTED",
+                    "message_to_client": f"Your booking has been confirmed at ${accepted_rate:.0f}/night! Thank you for choosing Marriott.",
+                    "booking_id": booking_id,
+                    "confirmed_rate": accepted_rate,
+                }
+            elif action in ("DECLINE", "DECLINED"):
+                response_data = {
+                    "decision": "DECLINED",
+                    "status": "DECLINED",
+                    "message_to_client": "Your booking has been declined as requested. We hope to serve you in the future.",
+                    "booking_id": booking_id,
+                }
+            else:
+                # COUNTER offers go through AI/Lambda for intelligent response
+                try:
+                    payload = json.dumps(payload_data)
+                    result = self._invoke_lambda("groupiq-negotiation_agent-" + ENVIRONMENT, payload)
+                    if isinstance(result, dict) and "body" in result:
+                        raw_body = result.get("body", "{}")
+                        response_data = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
                     else:
-                        response_data["status"] = "NEGOTIATING"
-            except Exception as lambda_err:
-                print(f"[GroupIQ] Lambda unavailable: {lambda_err}")
-                if action == "ACCEPT":
-                    response_data = {
-                        "decision": "ACCEPT",
-                        "status": "ACCEPTED",
-                        "message_to_client": "Your booking has been confirmed! Thank you for choosing Marriott.",
-                        "booking_id": booking_id,
-                    }
-                elif action in ("DECLINE", "DECLINED"):
-                    response_data = {
-                        "decision": "DECLINED",
-                        "status": "DECLINED",
-                        "message_to_client": "Your booking has been declined as requested.",
-                        "booking_id": booking_id,
-                    }
-                elif _bedrock_enabled and action in ("COUNTER", "ESCALATE", ""):
-                    # Use AWS Bedrock AI for smart negotiation
-                    try:
-                        booking_for_ai = backup.get_booking(booking_id) or {}
-                        ai_result = invoke_bedrock_negotiation(booking_for_ai, payload_data)
-                        response_data = {
-                            "decision": ai_result.get("decision", "COUNTER"),
-                            "status": "ACCEPTED" if ai_result.get("decision") == "ACCEPT" else "NEGOTIATING",
-                            "message_to_client": ai_result.get("message_to_client", ""),
-                            "counter_proposal": ai_result.get("counter_proposal"),
-                            "booking_id": booking_id,
-                            "ai_powered": True,
-                        }
-                        print(f"[GroupIQ] Bedrock AI decision: {response_data['decision']} for {booking_id}")
-                    except Exception as bedrock_err:
-                        print(f"[GroupIQ] Bedrock AI error, using local fallback: {bedrock_err}")
+                        response_data = result
+                    if not response_data.get("decision"):
+                        response_data["decision"] = "COUNTER"
+                    if not response_data.get("status"):
+                        if response_data["decision"] == "ACCEPT":
+                            response_data["status"] = "ACCEPTED"
+                        else:
+                            response_data["status"] = "NEGOTIATING"
+                except Exception as lambda_err:
+                    print(f"[GroupIQ] Lambda unavailable for COUNTER: {lambda_err}")
+                    if _bedrock_enabled:
+                        try:
+                            booking_for_ai = backup.get_booking(booking_id) or {}
+                            ai_result = invoke_bedrock_negotiation(booking_for_ai, payload_data)
+                            response_data = {
+                                "decision": ai_result.get("decision", "COUNTER"),
+                                "status": "ACCEPTED" if ai_result.get("decision") == "ACCEPT" else "NEGOTIATING",
+                                "message_to_client": ai_result.get("message_to_client", ""),
+                                "counter_proposal": ai_result.get("counter_proposal"),
+                                "booking_id": booking_id,
+                                "ai_powered": True,
+                            }
+                            print(f"[GroupIQ] Bedrock AI decision: {response_data['decision']} for {booking_id}")
+                        except Exception as bedrock_err:
+                            print(f"[GroupIQ] Bedrock AI error, using local fallback: {bedrock_err}")
+                            response_data = None
+                    if not response_data:
                         proposed_rate = float(payload_data.get("proposed_room_rate", 0))
                         counter_rate = round(proposed_rate * 1.15, 2) if proposed_rate > 0 else 265.0
                         response_data = {
-                            "decision": action or "COUNTER",
+                            "decision": "COUNTER",
                             "status": "NEGOTIATING",
                             "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. We can offer ${counter_rate:.0f}/night which includes complimentary breakfast and late checkout.",
                             "counter_proposal": {
@@ -848,20 +851,6 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             },
                             "booking_id": booking_id,
                         }
-                else:
-                    proposed_rate = float(payload_data.get("proposed_room_rate", 0))
-                    counter_rate = round(proposed_rate * 1.15, 2) if proposed_rate > 0 else 265.0
-                    response_data = {
-                        "decision": action or "COUNTER",
-                        "status": "NEGOTIATING",
-                        "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. We can offer ${counter_rate:.0f}/night which includes complimentary breakfast and late checkout.",
-                        "counter_proposal": {
-                            "room_rate": counter_rate,
-                            "includes_breakfast": True,
-                            "late_checkout": True,
-                        },
-                        "booking_id": booking_id,
-                    }
 
             # Always send email notification for every negotiation action
             decision = response_data.get("decision", "")
