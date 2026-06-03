@@ -135,32 +135,55 @@ else:
     print(f"[GroupIQ] SMTP not configured — emails will be logged to console only")
     print(f"[GroupIQ] To enable real emails, set: SMTP_USERNAME, SMTP_PASSWORD, SES_SENDER_EMAIL")
 
+_smtp_connection = None
+_smtp_lock = threading.Lock()
+
+
+def _get_smtp_connection():
+    """Get or create a persistent SMTP connection (reuse across emails)."""
+    global _smtp_connection
+    try:
+        if _smtp_connection:
+            _smtp_connection.noop()
+            return _smtp_connection
+    except Exception:
+        _smtp_connection = None
+
+    conn = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+    conn.starttls()
+    conn.login(SMTP_USERNAME, SMTP_PASSWORD)
+    _smtp_connection = conn
+    return conn
+
 
 def send_email(to_email, subject, html_body):
-    """Send a real email via Gmail SMTP. Returns True on success."""
+    """Send a real email via Gmail SMTP with persistent connection. Returns True on success."""
     sender = SES_SENDER_EMAIL or SMTP_USERNAME
     if not smtp_configured:
         print(f"[EMAIL-LOG] To: {to_email} | Subject: {subject}")
         print(f"[EMAIL-LOG] (Not sent — SMTP not configured)")
         return False
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"GroupIQ Marriott <{sender}>"
-        msg["To"] = to_email
-        msg.attach(MIMEText(html_body, "html"))
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"GroupIQ Marriott <{sender}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(sender, to_email, msg.as_string())
-
-        print(f"[EMAIL-SENT] To: {to_email} | Subject: {subject}")
-        return True
-    except Exception as e:
-        print(f"[EMAIL-ERROR] Failed to send to {to_email}: {e}")
-        return False
+    with _smtp_lock:
+        for attempt in range(2):
+            try:
+                conn = _get_smtp_connection()
+                conn.sendmail(sender, to_email, msg.as_string())
+                print(f"[EMAIL-SENT] To: {to_email} | Subject: {subject}")
+                return True
+            except Exception as e:
+                global _smtp_connection
+                _smtp_connection = None
+                if attempt == 0:
+                    continue
+                print(f"[EMAIL-ERROR] Failed to send to {to_email}: {e}")
+                return False
 
 
 def send_email_async(to_email, subject, html_body, booking_id=None, email_type="INQUIRY"):

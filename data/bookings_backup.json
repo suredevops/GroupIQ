@@ -4604,10 +4604,10 @@
       "num_rooms": "10",
       "dynamic_room_rate": "450",
       "event_type": "wedding",
-      "updated_at": "2026-06-03T07:19:29.873170+00:00",
+      "updated_at": "2026-06-03T08:16:41.286078+00:00",
       "company_name": "marriot",
       "check_in_date": "2026-06-25",
-      "status": "NEGOTIATING"
+      "status": "ACCEPTED"
     },
     "INQ-20260603-65ECADD5": {
       "contact_name": "Test Permanent Fix",
@@ -4650,7 +4650,78 @@
       "email_sent_at": "2026-06-03T07:06:52.046913+00:00",
       "email_to": "gsureshkrishna001@gmail.com",
       "last_email_type": "INQUIRY"
+    },
+    "INQ-20260603-56D5E989": {
+      "booking_id": "INQ-20260603-56D5E989",
+      "inquiry_id": "INQ-20260603-56D5E989",
+      "contact_name": "Venkata",
+      "contact_email": "gsureshkrishnaoo1@gmail.com",
+      "company_name": "marriot",
+      "event_type": "festival",
+      "check_in_date": "2026-06-18",
+      "check_out_date": "2026-06-20",
+      "num_rooms": 10,
+      "num_nights": 2,
+      "property_id": "MRIOTT-NYC-001",
+      "status": "INQUIRY_RECEIVED",
+      "version": 1,
+      "estimated_revenue": 6000,
+      "dynamic_pricing": {
+        "final_rate": 300,
+        "base_rate": 300,
+        "discount_applied": true
+      },
+      "dynamic_room_rate": 300,
+      "base_room_rate": 300,
+      "created_at": "2026-06-03T15:57:04.863699+00:00",
+      "updated_at": "2026-06-03T15:57:04.863711+00:00",
+      "fnb_required": true,
+      "meeting_space_required": true,
+      "special_requests": "Booking request",
+      "budget_indication": ""
+    },
+    "INQ-20260603-AE29D771": {
+      "contact_name": "Speed Test 1",
+      "contact_email": "gsureshkrishna001@gmail.com",
+      "event_type": "test",
+      "event_date": "2026-12-01",
+      "check_in_date": "2026-12-01",
+      "check_out_date": "2026-12-02",
+      "num_rooms": 1,
+      "num_nights": 1,
+      "property_id": "TEST-001",
+      "base_room_rate": 200,
+      "booking_id": "INQ-20260603-AE29D771",
+      "version": 1,
+      "status": "INQUIRY_RECEIVED",
+      "created_at": "2026-06-03T16:08:17.890520+00:00",
+      "estimated_revenue": 200.0,
+      "email_delivered": true,
+      "email_sent_at": "2026-06-03T16:08:19.637688+00:00",
+      "email_to": "gsureshkrishna001@gmail.com",
+      "last_email_type": "INQUIRY"
+    },
+    "INQ-20260603-6A321FD5": {
+      "contact_name": "Speed Test 2",
+      "contact_email": "gsureshkrishna001@gmail.com",
+      "event_type": "test",
+      "event_date": "2026-12-15",
+      "check_in_date": "2026-12-15",
+      "check_out_date": "2026-12-16",
+      "num_rooms": 1,
+      "num_nights": 1,
+      "property_id": "TEST-001",
+      "base_room_rate": 200,
+      "booking_id": "INQ-20260603-6A321FD5",
+      "version": 1,
+      "status": "INQUIRY_RECEIVED",
+      "created_at": "2026-06-03T16:08:18.321473+00:00",
+      "estimated_revenue": 200.0,
+      "email_delivered": true,
+      "email_sent_at": "2026-06-03T16:08:21.385852+00:00",
+      "email_to": "gsureshkrishna001@gmail.com",
+      "last_email_type": "INQUIRY"
     }
   },
-  "last_backup": "2026-06-03T08:15:24.832064+00:00"
+  "last_backup": "2026-06-03T16:08:51.285949+00:00"
 }
