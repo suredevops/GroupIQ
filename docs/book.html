@@ -3,9 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <title>GroupIQ — Book a Room</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -381,27 +378,8 @@
         }
     }
 
-    // Backend API endpoints to try (Render cloud server + local fallback)
-    const API_ENDPOINTS = ['https://groupiq.onrender.com', 'https://localhost:5556', 'http://localhost:5555'];
-
-    // App version - forces reload when updated
-    const APP_VERSION = '2.1';
-    const storedVersion = localStorage.getItem('groupiq_app_version');
-    if (storedVersion && storedVersion !== APP_VERSION) {
-        localStorage.setItem('groupiq_app_version', APP_VERSION);
-        location.reload(true);
-    }
-    localStorage.setItem('groupiq_app_version', APP_VERSION);
-
-    // Wake up Render server on page load (cold start takes ~30s)
-    fetch('https://groupiq.onrender.com/health').catch(() => {});
-
-    // Fetch with timeout helper
-    function fetchWithTimeout(url, options, timeoutMs = 45000) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        return fetch(url, {...options, signal: controller.signal}).finally(() => clearTimeout(timer));
-    }
+    // Backend API endpoints to try (local server + any configured remote)
+    const API_ENDPOINTS = ['https://localhost:5556', 'http://localhost:5555'];
 
     async function submitBooking() {
         const name = document.getElementById('bkName').value.trim();
@@ -416,11 +394,6 @@
         if (!selectedProperty) { showToast('Please select a property'); return; }
         const nights = Math.round((new Date(co) - new Date(ci)) / 86400000);
         if (nights < 1) { showToast('Check-out must be after check-in'); return; }
-
-        // Show loading state
-        const submitBtn = document.querySelector('#bookingForm button[onclick="submitBooking()"]');
-        const originalText = submitBtn ? submitBtn.textContent : '';
-        if (submitBtn) { submitBtn.textContent = 'Submitting... Please wait'; submitBtn.disabled = true; }
 
         const payload = {
             contact_name: name,
@@ -444,11 +417,11 @@
         // Try to submit to backend server (syncs with Admin portal)
         for (const endpoint of API_ENDPOINTS) {
             try {
-                const res = await fetchWithTimeout(endpoint + '/customer/inquiries', {
+                const res = await fetch(endpoint + '/customer/inquiries', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
-                }, 50000);
+                });
                 if (res.ok) {
                     const data = await res.json();
                     bookingId = data.inquiry_id || data.booking_id;
@@ -460,9 +433,6 @@
                 }
             } catch(e) { /* endpoint not reachable, try next */ }
         }
-
-        // Restore button
-        if (submitBtn) { submitBtn.textContent = originalText; submitBtn.disabled = false; }
 
         // Fallback: generate locally if no backend available
         if (!apiSuccess) {
@@ -596,11 +566,11 @@
         // Try backend API first (sends real email notifications)
         for (const endpoint of API_ENDPOINTS) {
             try {
-                const res = await fetchWithTimeout(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ proposed_room_rate: rate, message: message })
-                }, 50000);
+                    body: JSON.stringify({ proposed_room_rate: rate, message: message, action: 'COUNTER' })
+                });
                 if (res.ok) {
                     const data = await res.json();
                     decision = (data.decision || '').toUpperCase();
@@ -670,11 +640,34 @@
         showToast(emailSent ? decision + ' — Email sent!' : 'Response: ' + decision);
     }
 
-    function acceptCounterOffer() {
+    async function acceptCounterOffer() {
         const rate = negState.counterRate || 265;
-        document.getElementById('negRate').value = rate;
-        document.getElementById('negMessage').value = 'I accept the counter-offer of $' + rate + '/night.';
-        submitNegotiation();
+        const id = negState.inquiryId;
+        if (!id) { showToast('No active inquiry'); return; }
+
+        let emailSent = false;
+        for (const endpoint of API_ENDPOINTS) {
+            try {
+                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ proposed_room_rate: rate, message: 'I accept the offer of $' + rate + '/night.', action: 'ACCEPT' })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    emailSent = data.email_delivered || false;
+                    negState.lastDecision = 'ACCEPT';
+                    negState.history.push({ turn: ++negState.turn, action: 'YOU', rate: rate, message: 'Accepted offer of $' + rate + '/night' });
+                    negState.history.push({ turn: negState.turn, action: 'ACCEPT', rate: rate, message: data.message_to_client || 'Booking confirmed!' });
+                    renderTimeline();
+                    document.getElementById('negResult').innerHTML = '<h3 style="color:#059669;">✓ Booking Confirmed!</h3><p>' + (data.message_to_client || 'Your booking has been confirmed.') + '</p>' + (emailSent ? '<p style="margin-top:8px; font-size:12px; color:#059669;">✓ Confirmation email sent to your inbox</p>' : '');
+                    document.getElementById('negResult').classList.add('show');
+                    document.getElementById('negActions').classList.remove('show');
+                    showToast('Booking confirmed! Check your email.');
+                    break;
+                }
+            } catch(e) { /* endpoint not reachable */ }
+        }
     }
 
     function negotiateAgain() {
@@ -694,11 +687,11 @@
         // Notify backend to send decline email
         for (const endpoint of API_ENDPOINTS) {
             try {
-                const res = await fetchWithTimeout(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
+                const res = await fetch(endpoint + '/customer/inquiries/' + encodeURIComponent(id) + '/negotiate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ proposed_room_rate: 0, message: 'DECLINE - Customer declined the offer', action: 'DECLINE' })
-                }, 50000);
+                });
                 if (res.ok) { const data = await res.json(); emailSent = data.email_delivered || false; break; }
             } catch(e) { /* try next */ }
         }

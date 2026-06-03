@@ -4586,33 +4586,28 @@
       "status": "INQUIRY_RECEIVED"
     },
     "INQ-20260603-4F0B6E3C": {
-      "booking_id": "INQ-20260603-4F0B6E3C",
-      "inquiry_id": "INQ-20260603-4F0B6E3C",
       "contact_name": "B V S Krishna",
-      "contact_email": "gsureshkrishna001@gmail.com",
-      "company_name": "marriot",
-      "event_type": "wedding",
-      "check_in_date": "2026-06-25",
+      "dynamic_pricing": "{\"final_rate\": 450, \"base_rate\": 450, \"discount_applied\": true}",
+      "base_room_rate": "450",
       "check_out_date": "2026-06-27",
-      "num_rooms": 10,
-      "num_nights": 2,
-      "property_id": "MRIOTT-BOM-001",
-      "status": "NEGOTIATING",
-      "version": 3,
-      "estimated_revenue": 9000,
-      "dynamic_pricing": {
-        "final_rate": 450,
-        "base_rate": 450,
-        "discount_applied": true
-      },
-      "dynamic_room_rate": 450,
-      "base_room_rate": 450,
-      "created_at": "2026-06-03T07:01:01.018556+00:00",
-      "updated_at": "2026-06-03T07:09:54.103082+00:00",
+      "inquiry_id": "INQ-20260603-4F0B6E3C",
       "fnb_required": true,
-      "meeting_space_required": true,
+      "estimated_revenue": "9000",
+      "num_nights": "2",
+      "created_at": "2026-06-03T07:01:01.018556+00:00",
       "special_requests": "Booking request",
-      "budget_indication": ""
+      "version": "4",
+      "property_id": "MRIOTT-BOM-001",
+      "contact_email": "gsureshkrishna001@gmail.com",
+      "booking_id": "INQ-20260603-4F0B6E3C",
+      "meeting_space_required": true,
+      "num_rooms": "10",
+      "dynamic_room_rate": "450",
+      "event_type": "wedding",
+      "updated_at": "2026-06-03T07:19:29.873170+00:00",
+      "company_name": "marriot",
+      "check_in_date": "2026-06-25",
+      "status": "NEGOTIATING"
     },
     "INQ-20260603-65ECADD5": {
       "contact_name": "Test Permanent Fix",
@@ -4657,5 +4652,5 @@
       "last_email_type": "INQUIRY"
     }
   },
-  "last_backup": "2026-06-03T07:10:51.762485+00:00"
+  "last_backup": "2026-06-03T07:23:24.813656+00:00"
 }
