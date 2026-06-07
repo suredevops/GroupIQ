@@ -517,10 +517,10 @@
                         property: b.property_id || b.property_name || '',
                         event: b.event_type || '',
                         checkin: b.check_in_date || b.event_date || '',
-                        nights: b.num_nights || 1,
-                        rooms: b.num_rooms || 0,
-                        rate: b.base_room_rate || b.dynamic_room_rate || 0,
-                        revenue: b.estimated_revenue || (b.num_rooms || 0) * (b.num_nights || 1) * (b.base_room_rate || b.dynamic_room_rate || 0),
+                        nights: parseInt(b.num_nights) || 1,
+                        rooms: parseInt(b.num_rooms) || 0,
+                        rate: parseFloat(b.base_room_rate || b.dynamic_room_rate) || 0,
+                        revenue: parseFloat(b.estimated_revenue) || (parseInt(b.num_rooms) || 0) * (parseInt(b.num_nights) || 1) * (parseFloat(b.base_room_rate || b.dynamic_room_rate) || 0),
                         status: b.status || 'INQUIRY_RECEIVED'
                     }));
                     break;
