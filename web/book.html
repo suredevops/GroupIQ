@@ -500,8 +500,39 @@
         if (name === 'mybookings') loadMyBookings();
     }
 
-    function loadMyBookings() {
-        const bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
+    async function loadMyBookings() {
+        document.getElementById('myBookingsTable').innerHTML = '<div style="text-align:center; padding:40px; color:#94a3b8;">Loading bookings...</div>';
+
+        let bookings = [];
+        const email = localStorage.getItem('groupiq_user_email') || 'gsureshkrishna001@gmail.com';
+
+        // Fetch from server API (all bookings for this user)
+        for (const endpoint of API_ENDPOINTS) {
+            try {
+                const res = await fetch(endpoint + '/customer/bookings?email=' + encodeURIComponent(email));
+                if (res.ok) {
+                    const data = await res.json();
+                    bookings = (data.bookings || []).map(b => ({
+                        id: b.booking_id,
+                        property: b.property_id || b.property_name || '',
+                        event: b.event_type || '',
+                        checkin: b.check_in_date || b.event_date || '',
+                        nights: b.num_nights || 1,
+                        rooms: b.num_rooms || 0,
+                        rate: b.base_room_rate || b.dynamic_room_rate || 0,
+                        revenue: b.estimated_revenue || (b.num_rooms || 0) * (b.num_nights || 1) * (b.base_room_rate || b.dynamic_room_rate || 0),
+                        status: b.status || 'INQUIRY_RECEIVED'
+                    }));
+                    break;
+                }
+            } catch(e) { /* try next endpoint */ }
+        }
+
+        // Fallback to localStorage if server unavailable
+        if (!bookings.length) {
+            bookings = JSON.parse(localStorage.getItem('groupiq_bookings') || '[]');
+        }
+
         if (!bookings.length) {
             document.getElementById('myBookingsTable').innerHTML = '<div style="text-align:center; padding:40px; color:#94a3b8;"><p style="font-size:42px; margin-bottom:14px;">📋</p><p>No bookings yet. <a href="#" onclick="switchTab(\'book\')" style="color:#1e40af;">Book rooms now</a>.</p></div>';
             return;
