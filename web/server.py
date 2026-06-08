@@ -1053,42 +1053,55 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                         min_acceptable = round(base_rate * (1 - max_discount))
                         num_rooms = int(booking_for_pricing.get("num_rooms", payload_data.get("num_rooms", 10)))
 
-                        if proposed_rate >= min_acceptable:
-                            if proposed_rate >= base_rate:
-                                response_data = {
-                                    "decision": "ACCEPT",
-                                    "status": "ACCEPTED",
-                                    "message_to_client": f"Thank you for choosing Marriott. Your group rate of ${proposed_rate:.0f}/night at our {location} property is confirmed. We look forward to welcoming your group.",
-                                    "booking_id": booking_id,
-                                    "confirmed_rate": proposed_rate,
-                                    "zone": zone,
-                                    "brand_tier": brand_tier,
-                                }
+                        # For COUNTER action: always counter back (never auto-accept)
+                        if proposed_rate >= base_rate:
+                            counter_rate = base_rate
+                            perks = ["complimentary breakfast", "dedicated group coordinator"]
+                            if zone == "outskirts":
+                                perks.append("late checkout until 2 PM")
+                                perks.append("complimentary parking")
+                            if brand_tier == "luxury":
+                                perks = ["Executive Lounge access", "spa credit", "premium breakfast buffet"]
+                            perks_text = ", ".join(perks)
+                            response_data = {
+                                "decision": "COUNTER",
+                                "status": "NEGOTIATING",
+                                "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. Our published group rate for this {brand_tier.title()} property at {location} is ${base_rate}/night. We can confirm at ${base_rate}/night including {perks_text}. Would you like to accept?",
+                                "counter_proposal": {
+                                    "room_rate": base_rate,
+                                    "includes_breakfast": True,
+                                    "late_checkout": zone == "outskirts" or brand_tier == "luxury",
+                                },
+                                "booking_id": booking_id,
+                                "zone": zone,
+                                "brand_tier": brand_tier,
+                                "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
+                            }
+                        elif proposed_rate >= min_acceptable:
+                            counter_rate = round((proposed_rate + base_rate) / 2)
+                            perks = []
+                            if brand_tier == "luxury":
+                                perks = ["Executive Lounge access", "complimentary breakfast buffet"]
+                            elif zone == "outskirts":
+                                perks = ["complimentary breakfast", "late checkout until 2 PM", "free parking"]
                             else:
-                                counter_rate = round((proposed_rate + base_rate) / 2)
-                                perks = []
-                                if brand_tier == "luxury":
-                                    perks = ["Executive Lounge access", "complimentary breakfast buffet"]
-                                elif zone == "outskirts":
-                                    perks = ["complimentary breakfast", "late checkout until 2 PM", "free parking"]
-                                else:
-                                    perks = ["complimentary breakfast", "dedicated group check-in"]
-                                perks_text = ", ".join(perks)
-                                response_data = {
-                                    "decision": "COUNTER",
-                                    "status": "NEGOTIATING",
-                                    "message_to_client": f"Thank you for your interest in our {brand_tier.title()} property at {location}. We appreciate your offer of ${proposed_rate:.0f}/night. For your group of {num_rooms} rooms, we can offer a special rate of ${counter_rate:.0f}/night (published BAR: ${base_rate}) including {perks_text}.",
-                                    "counter_proposal": {
-                                        "room_rate": counter_rate,
-                                        "includes_breakfast": True,
-                                        "late_checkout": zone == "outskirts" or brand_tier == "luxury",
-                                        "room_upgrade": brand_tier == "select" and num_rooms >= 50,
-                                    },
-                                    "booking_id": booking_id,
-                                    "zone": zone,
-                                    "brand_tier": brand_tier,
-                                    "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
-                                }
+                                perks = ["complimentary breakfast", "dedicated group check-in"]
+                            perks_text = ", ".join(perks)
+                            response_data = {
+                                "decision": "COUNTER",
+                                "status": "NEGOTIATING",
+                                "message_to_client": f"Thank you for your interest in our {brand_tier.title()} property at {location}. We appreciate your offer of ${proposed_rate:.0f}/night. For your group of {num_rooms} rooms, we can offer a special rate of ${counter_rate:.0f}/night (published BAR: ${base_rate}) including {perks_text}.",
+                                "counter_proposal": {
+                                    "room_rate": counter_rate,
+                                    "includes_breakfast": True,
+                                    "late_checkout": zone == "outskirts" or brand_tier == "luxury",
+                                    "room_upgrade": brand_tier == "select" and num_rooms >= 50,
+                                },
+                                "booking_id": booking_id,
+                                "zone": zone,
+                                "brand_tier": brand_tier,
+                                "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
+                            }
                         else:
                             response_data = {
                                 "decision": "ESCALATE",

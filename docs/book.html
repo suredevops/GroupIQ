@@ -630,6 +630,10 @@
         if (!id) { showToast('Please enter an Inquiry ID'); return; }
         if (action === 'COUNTER' && (!rate || rate <= 0)) { showToast('Please enter a proposed rate for counter-offer'); return; }
 
+        // Confirm destructive actions
+        if (action === 'DECLINE' && !confirm('Are you sure you want to decline this booking?')) return;
+        if (action === 'ESCALATE' && !confirm('Escalate to Senior Revenue Manager?')) return;
+
         negState.inquiryId = id;
         negState.turn++;
 
