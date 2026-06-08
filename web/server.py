@@ -372,13 +372,22 @@ class BookingBackup:
                 if not existing:
                     self._data["bookings"][bid] = json.loads(json.dumps(item, default=str))
                 elif int(item.get("version", 0)) > int(existing.get("version", 0)):
-                    self._data["bookings"][bid] = json.loads(json.dumps(item, default=str))
+                    merged = json.loads(json.dumps(item, default=str))
+                    if existing.get("email_delivered"):
+                        merged["email_delivered"] = existing["email_delivered"]
+                        merged["email_to"] = existing.get("email_to")
+                        merged["last_email_type"] = existing.get("last_email_type")
+                    self._data["bookings"][bid] = merged
                 elif int(item.get("version", 0)) == int(existing.get("version", 0)):
-                    # Same version — keep whichever has a more recent updated_at
                     item_ts = item.get("updated_at", "")
                     existing_ts = existing.get("updated_at", "")
                     if item_ts >= existing_ts:
-                        self._data["bookings"][bid] = json.loads(json.dumps(item, default=str))
+                        merged = json.loads(json.dumps(item, default=str))
+                        if existing.get("email_delivered"):
+                            merged["email_delivered"] = existing["email_delivered"]
+                            merged["email_to"] = existing.get("email_to")
+                            merged["last_email_type"] = existing.get("last_email_type")
+                        self._data["bookings"][bid] = merged
             self._save()
 
     def get_all_bookings(self) -> list:
@@ -582,6 +591,11 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     if int(b.get("version", 0)) == int(existing.get("version", 0)):
                         if b.get("updated_at", "") > existing.get("updated_at", ""):
                             latest[bid] = b
+                    # Always preserve email_delivered from backup
+                    if b.get("email_delivered") and not latest[bid].get("email_delivered"):
+                        latest[bid]["email_delivered"] = b["email_delivered"]
+                        latest[bid]["email_to"] = b.get("email_to")
+                        latest[bid]["last_email_type"] = b.get("last_email_type")
 
             bookings = sorted(latest.values(), key=lambda x: x.get("created_at", ""), reverse=True)
             clean = json.loads(json.dumps(bookings, default=str))
@@ -915,7 +929,6 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     booking_updated = dict(booking)
                     booking_updated["status"] = new_status
                     booking_updated["updated_at"] = now_ts
-                    backup.upsert_booking(booking_updated)
 
                     to_email = booking.get("contact_email", "")
                     contact_name = booking.get("contact_name", "Guest")
@@ -945,11 +958,16 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             booking_id=booking_id,
                             email_type=decision,
                         )
+                        booking_updated["email_delivered"] = True
+                        booking_updated["email_to"] = to_email
+                        booking_updated["last_email_type"] = decision
                         response_data["email_delivered"] = True
                         print(f"[GroupIQ] Email triggered: {decision} → {to_email} for {booking_id}")
                     else:
                         print(f"[GroupIQ] No email - contact_email missing for {booking_id}")
                         response_data["email_delivered"] = False
+
+                    backup.upsert_booking(booking_updated)
                 else:
                     print(f"[GroupIQ] No email - booking not found: {booking_id}")
                     response_data["email_delivered"] = False
