@@ -172,22 +172,35 @@
             <div class="neg-section">
                 <h2>Negotiate Booking</h2>
 
-                <!-- Rate Guide - same as admin portal -->
-                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:20px;">
-                    <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:14px; text-align:center;">
-                        <div style="font-size:11px; font-weight:700; color:#059669; text-transform:uppercase; letter-spacing:0.5px;">Accept</div>
-                        <div style="font-size:22px; font-weight:800; color:#065f46; margin:4px 0;">$265+</div>
-                        <div style="font-size:11px; color:#6b7280;">per night</div>
+                <!-- Rate Guide with Zone-Based Pricing -->
+                <div style="margin-bottom:20px;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+                        <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7); border:2px solid #86efac; border-radius:12px; padding:14px;">
+                            <div style="font-size:11px; font-weight:700; color:#065f46; text-transform:uppercase; letter-spacing:0.5px;">Prominent / City Center</div>
+                            <div style="font-size:13px; color:#374151; margin-top:6px;">Base: $320–$550/night</div>
+                            <div style="font-size:12px; color:#6b7280;">Max discount: 18–25%</div>
+                            <div style="font-size:11px; color:#059669; margin-top:4px;">Tank Bund, Juhu, Aerocity, MG Road</div>
+                        </div>
+                        <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe); border:2px solid #93c5fd; border-radius:12px; padding:14px;">
+                            <div style="font-size:11px; font-weight:700; color:#1e40af; text-transform:uppercase; letter-spacing:0.5px;">Outskirts / Suburban</div>
+                            <div style="font-size:13px; color:#374151; margin-top:6px;">Base: $180–$250/night</div>
+                            <div style="font-size:12px; color:#6b7280;">Max discount: 38–45%</div>
+                            <div style="font-size:11px; color:#2563eb; margin-top:4px;">HITEC City, Whitefield, Goregaon, OMR</div>
+                        </div>
                     </div>
-                    <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:14px; text-align:center;">
-                        <div style="font-size:11px; font-weight:700; color:#d97706; text-transform:uppercase; letter-spacing:0.5px;">Counter</div>
-                        <div style="font-size:22px; font-weight:800; color:#92400e; margin:4px 0;">$180–$265</div>
-                        <div style="font-size:11px; color:#6b7280;">negotiable range</div>
-                    </div>
-                    <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:10px; padding:14px; text-align:center;">
-                        <div style="font-size:11px; font-weight:700; color:#7c3aed; text-transform:uppercase; letter-spacing:0.5px;">Escalate</div>
-                        <div style="font-size:22px; font-weight:800; color:#5b21b6; margin:4px 0;">&lt;$180</div>
-                        <div style="font-size:11px; color:#6b7280;">manager review</div>
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;">
+                        <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:11px; font-weight:700; color:#059669; text-transform:uppercase;">Accept</div>
+                            <div style="font-size:16px; font-weight:800; color:#065f46;">&#8805; base rate</div>
+                        </div>
+                        <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:11px; font-weight:700; color:#d97706; text-transform:uppercase;">Counter</div>
+                            <div style="font-size:16px; font-weight:800; color:#92400e;">within discount</div>
+                        </div>
+                        <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:10px; padding:12px; text-align:center;">
+                            <div style="font-size:11px; font-weight:700; color:#7c3aed; text-transform:uppercase;">Escalate</div>
+                            <div style="font-size:16px; font-weight:800; color:#5b21b6;">&lt; floor rate</div>
+                        </div>
                     </div>
                 </div>
 
@@ -601,6 +614,7 @@
         negState.turn++;
 
         let decision, responseMsg, counterRate = null, emailSent = false;
+        let serverData = null;
 
         for (const endpoint of API_ENDPOINTS) {
             try {
@@ -610,11 +624,11 @@
                     body: JSON.stringify({ proposed_room_rate: rate || 265, message: message || action, action: action })
                 });
                 if (res.ok) {
-                    const data = await res.json();
-                    decision = (data.decision || action).toUpperCase();
-                    responseMsg = data.message_to_client || '';
-                    counterRate = data.counter_proposal ? data.counter_proposal.room_rate : null;
-                    emailSent = data.email_delivered || false;
+                    serverData = await res.json();
+                    decision = (serverData.decision || action).toUpperCase();
+                    responseMsg = serverData.message_to_client || '';
+                    counterRate = serverData.counter_proposal ? serverData.counter_proposal.room_rate : null;
+                    emailSent = serverData.email_delivered || false;
                     break;
                 }
             } catch(e) {}
@@ -626,6 +640,17 @@
             else if (action === 'COUNTER') { counterRate = Math.round(rate + (265 - rate) * 0.5); responseMsg = 'Counter-offer: $' + counterRate + '/night with complimentary breakfast.'; }
             else if (action === 'DECLINE') responseMsg = 'Booking declined. We hope to serve you in the future.';
             else if (action === 'ESCALATE') responseMsg = 'Escalated to Senior Sales Manager for priority review within 24 hours.';
+        }
+
+        // Capture zone/pricing info from server response
+        let zoneLabel = '';
+        if (serverData && serverData.zone) {
+            const zColors = { prominent: '#dc2626', outskirts: '#2563eb', standard: '#6b7280' };
+            const zNames = { prominent: 'City Center / Premium', outskirts: 'Outskirts / Suburban', standard: 'Standard' };
+            zoneLabel = '<span style="display:inline-block;margin-left:8px;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;background:' + (zColors[serverData.zone]||'#6b7280') + '20;color:' + (zColors[serverData.zone]||'#6b7280') + ';">' + (zNames[serverData.zone]||serverData.zone) + '</span>';
+            if (serverData.pricing_info) {
+                zoneLabel += '<span style="margin-left:6px;font-size:10px;color:#6b7280;">Base: $' + serverData.pricing_info.base_rate + ' | Min: $' + serverData.pricing_info.min_acceptable + ' | Max Disc: ' + serverData.pricing_info.max_discount_pct + '%</span>';
+            }
         }
 
         negState.lastDecision = decision;
@@ -646,7 +671,7 @@
         };
         const c = colors[decision] || colors['COUNTER'];
 
-        let html = '<h3 style="font-size:15px; margin-bottom:10px;">Negotiation Response (Round ' + negState.turn + ')</h3>' +
+        let html = '<h3 style="font-size:15px; margin-bottom:10px;">Negotiation Response (Round ' + negState.turn + ')' + zoneLabel + '</h3>' +
             '<p><strong>Decision:</strong> <span style="background:' + c.bg + '; color:' + c.text + '; border:1px solid ' + c.border + '; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:700;">' + decision + '</span></p>' +
             '<p style="margin-top:10px; color:#475569; font-size:14px;">' + responseMsg + '</p>';
 

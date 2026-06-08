@@ -76,28 +76,42 @@ def get_bedrock_client():
     return _bedrock_client
 
 def invoke_bedrock_negotiation(booking, counter_offer):
-    """Use AWS Bedrock AI to evaluate a counter-offer and decide next action."""
+    """Use AWS Bedrock AI to evaluate a counter-offer with zone-based pricing."""
     client = get_bedrock_client()
-    
-    system_prompt = """You are a Marriott hotel revenue management AI. Evaluate counter-offers for group bookings.
-Respond ONLY with valid JSON: {"decision": "ACCEPT" or "COUNTER" or "ESCALATE", "message_to_client": "professional message to the customer", "counter_proposal": {"room_rate": number, "includes_breakfast": true/false, "late_checkout": true/false}, "reasoning": "internal reasoning"}
-Rules:
-- Max 15% discount from base rate
-- ACCEPT if requested rate is within 15% of base rate
-- COUNTER with value-adds (breakfast, late checkout) if request is 15-25% below base
-- ESCALATE if request is >25% below base rate (unreasonable)
+
+    # Look up property zone info for dynamic pricing
+    property_id = booking.get("property_id", "")
+    zone_info = GroupIQServer.PROPERTY_ZONES.get(property_id, {"zone": "standard", "base_rate": 265, "max_discount": 0.35})
+    zone = zone_info["zone"]
+    max_discount_pct = int(zone_info["max_discount"] * 100)
+    zone_base_rate = zone_info["base_rate"]
+
+    system_prompt = f"""You are a Marriott hotel revenue management AI. Evaluate counter-offers for group bookings.
+Respond ONLY with valid JSON: {{"decision": "ACCEPT" or "COUNTER" or "ESCALATE", "message_to_client": "professional message to the customer", "counter_proposal": {{"room_rate": number, "includes_breakfast": true/false, "late_checkout": true/false}}, "reasoning": "internal reasoning"}}
+Property Zone: {zone.upper()}
+Pricing Rules for this zone:
+- Zone base rate: ${zone_base_rate}/night
+- Maximum allowed discount: {max_discount_pct}% (floor rate: ${round(zone_base_rate * (1 - zone_info['max_discount']))}/night)
+- ACCEPT if requested rate >= floor rate
+- COUNTER with value-adds (breakfast, late checkout for outskirts) if request is 5-15% below floor
+- ESCALATE if request is far below floor rate (unreasonable)
+- Outskirts properties can offer more perks: late checkout, room upgrades, parking
+- Prominent/city-center properties: tighter margins, but can offer breakfast, lounge access
 - Always be professional and courteous in message_to_client"""
 
-    base_rate = float(booking.get("base_room_rate", booking.get("dynamic_room_rate", 250)))
+    base_rate = float(booking.get("base_room_rate", booking.get("dynamic_room_rate", zone_base_rate)))
+    floor_rate = round(base_rate * (1 - zone_info["max_discount"]))
     user_msg = f"""Evaluate this counter-offer:
+- Property Zone: {zone} ({"wider discount range, more perks available" if zone == "outskirts" else "premium location, tighter margins"})
 - Base Room Rate: ${base_rate}/night
+- Floor Rate (min acceptable): ${floor_rate}/night
+- Max Discount: {max_discount_pct}%
 - Rooms: {booking.get('num_rooms', 0)} | Nights: {booking.get('num_nights', 0)}
 - Event: {booking.get('event_type', 'event')}, Date: {booking.get('event_date', 'TBD')}
 - Client Name: {booking.get('contact_name', 'Guest')}
 - Client Requested Rate: ${counter_offer.get('proposed_room_rate', 'Not specified')}/night
 - Client Message: {counter_offer.get('message', 'No message')}
-- Action requested: {counter_offer.get('action', 'COUNTER')}
-Max Allowed Discount: 15% (floor rate: ${base_rate * 0.85:.0f}/night)"""
+- Action requested: {counter_offer.get('action', 'COUNTER')}"""
 
     body = json.dumps({
         "messages": [{"role": "user", "content": [{"text": user_msg}]}],
@@ -854,6 +868,44 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             print(f"[INQUIRY-ERROR] {e}")
             self._json_response(500, {"error": str(e)})
 
+    # Property zone-based pricing: outskirts get more discount flexibility
+    PROPERTY_ZONES = {
+        # Prominent / City Center properties — tighter discount (max 25%)
+        "MRIOTT-HYD-001": {"zone": "prominent", "base_rate": 320, "max_discount": 0.25},
+        "FOURPT-HYD-001": {"zone": "prominent", "base_rate": 290, "max_discount": 0.25},
+        "RITZ-BLR-001": {"zone": "prominent", "base_rate": 450, "max_discount": 0.20},
+        "SHRATN-BLR-001": {"zone": "prominent", "base_rate": 380, "max_discount": 0.25},
+        "MRIOTT-BOM-001": {"zone": "prominent", "base_rate": 420, "max_discount": 0.22},
+        "JWMARR-DEL-001": {"zone": "prominent", "base_rate": 480, "max_discount": 0.20},
+        "MRIOTT-DEL-001": {"zone": "prominent", "base_rate": 380, "max_discount": 0.25},
+        "RITZ-DEL-001": {"zone": "prominent", "base_rate": 550, "max_discount": 0.18},
+        "MRIOTT-GOA-001": {"zone": "prominent", "base_rate": 350, "max_discount": 0.25},
+        "WGOA-GOA-001": {"zone": "prominent", "base_rate": 520, "max_discount": 0.20},
+        # Outskirts / Suburban properties — wider discount range (max 45%)
+        "WESTIN-HYD-001": {"zone": "outskirts", "base_rate": 220, "max_discount": 0.40},
+        "SHRATN-HYD-001": {"zone": "outskirts", "base_rate": 200, "max_discount": 0.42},
+        "COURTY-HYD-001": {"zone": "outskirts", "base_rate": 180, "max_discount": 0.45},
+        "MRIOTT-BLR-001": {"zone": "outskirts", "base_rate": 250, "max_discount": 0.38},
+        "COURTY-BLR-001": {"zone": "outskirts", "base_rate": 190, "max_discount": 0.45},
+        "WESTIN-BOM-001": {"zone": "outskirts", "base_rate": 230, "max_discount": 0.40},
+        "COURTY-BOM-001": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.45},
+        "JWMARR-BOM-002": {"zone": "outskirts", "base_rate": 240, "max_discount": 0.38},
+        "WESTIN-DEL-001": {"zone": "outskirts", "base_rate": 210, "max_discount": 0.42},
+        "SHRATN-DEL-001": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.45},
+        "MRIOTT-MAA-001": {"zone": "outskirts", "base_rate": 200, "max_discount": 0.42},
+        "WESTIN-MAA-001": {"zone": "outskirts", "base_rate": 185, "max_discount": 0.45},
+        "MRIOTT-PNQ-001": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.42},
+        "WESTIN-PNQ-001": {"zone": "outskirts", "base_rate": 180, "max_discount": 0.45},
+    }
+
+    def _get_pricing_for_property(self, property_id):
+        """Get zone-based pricing rules for a property."""
+        zone_info = self.PROPERTY_ZONES.get(property_id)
+        if zone_info:
+            return zone_info
+        # Default: mid-range
+        return {"zone": "standard", "base_rate": 265, "max_discount": 0.35}
+
     def _handle_negotiate(self, booking_id, body):
         """Submit a counter-offer for negotiation."""
         try:
@@ -938,18 +990,48 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             response_data = None
                     if not response_data:
                         proposed_rate = float(payload_data.get("proposed_room_rate", 0))
-                        counter_rate = round(proposed_rate * 1.15, 2) if proposed_rate > 0 else 265.0
-                        response_data = {
-                            "decision": "COUNTER",
-                            "status": "NEGOTIATING",
-                            "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. We can offer ${counter_rate:.0f}/night which includes complimentary breakfast and late checkout.",
-                            "counter_proposal": {
-                                "room_rate": counter_rate,
-                                "includes_breakfast": True,
-                                "late_checkout": True,
-                            },
-                            "booking_id": booking_id,
-                        }
+                        # Zone-based pricing: outskirts properties allow more discount
+                        booking_for_pricing = backup.get_booking(booking_id) or {}
+                        prop_id = booking_for_pricing.get("property_id", "")
+                        zone_info = self._get_pricing_for_property(prop_id)
+                        base_rate = zone_info["base_rate"]
+                        max_discount = zone_info["max_discount"]
+                        zone = zone_info["zone"]
+                        min_acceptable = round(base_rate * (1 - max_discount))
+
+                        if proposed_rate >= base_rate:
+                            response_data = {
+                                "decision": "ACCEPT",
+                                "status": "ACCEPTED",
+                                "message_to_client": f"Your rate of ${proposed_rate:.0f}/night is accepted! Booking confirmed.",
+                                "booking_id": booking_id,
+                                "confirmed_rate": proposed_rate,
+                                "zone": zone,
+                            }
+                        elif proposed_rate >= min_acceptable:
+                            counter_rate = round((proposed_rate + base_rate) / 2)
+                            response_data = {
+                                "decision": "COUNTER",
+                                "status": "NEGOTIATING",
+                                "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. For this {zone} location, we can offer ${counter_rate:.0f}/night (base: ${base_rate}/night, max discount: {int(max_discount*100)}%). Includes complimentary breakfast.",
+                                "counter_proposal": {
+                                    "room_rate": counter_rate,
+                                    "includes_breakfast": True,
+                                    "late_checkout": zone == "outskirts",
+                                },
+                                "booking_id": booking_id,
+                                "zone": zone,
+                                "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
+                            }
+                        else:
+                            response_data = {
+                                "decision": "ESCALATE",
+                                "status": "ESCALATED",
+                                "message_to_client": f"Your offer of ${proposed_rate:.0f}/night is below our minimum of ${min_acceptable}/night for this {zone} property (base: ${base_rate}, max discount: {int(max_discount*100)}%). Escalated to Senior Sales Manager.",
+                                "booking_id": booking_id,
+                                "zone": zone,
+                                "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
+                            }
 
             # Always send email notification for every negotiation action
             decision = response_data.get("decision", "")
