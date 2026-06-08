@@ -894,6 +894,13 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     "message_to_client": "Your booking has been declined as requested. We hope to serve you in the future.",
                     "booking_id": booking_id,
                 }
+            elif action == "ESCALATE":
+                response_data = {
+                    "decision": "ESCALATE",
+                    "status": "ESCALATED",
+                    "message_to_client": "Your request has been escalated to a Senior Sales Manager for priority review. You will receive a response within 24 hours.",
+                    "booking_id": booking_id,
+                }
             else:
                 # COUNTER offers go through AI/Lambda for intelligent response
                 try:
