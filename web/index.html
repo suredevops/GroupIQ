@@ -264,11 +264,31 @@
 
         <div class="tab-content" id="tab-negotiate">
             <div class="section">
-                <h2>Submit Counter-Offer</h2>
+                <h2>Negotiate Booking</h2>
+
+                <!-- Rate Guide -->
+                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:20px;">
+                    <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#059669; text-transform:uppercase; letter-spacing:0.5px;">Accept</div>
+                        <div style="font-size:22px; font-weight:800; color:#065f46; margin:4px 0;">$265+</div>
+                        <div style="font-size:11px; color:#6b7280;">per night</div>
+                    </div>
+                    <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#d97706; text-transform:uppercase; letter-spacing:0.5px;">Counter</div>
+                        <div style="font-size:22px; font-weight:800; color:#92400e; margin:4px 0;">$180–$265</div>
+                        <div style="font-size:11px; color:#6b7280;">negotiable range</div>
+                    </div>
+                    <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:10px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#7c3aed; text-transform:uppercase; letter-spacing:0.5px;">Escalate</div>
+                        <div style="font-size:22px; font-weight:800; color:#5b21b6; margin:4px 0;">&lt;$180</div>
+                        <div style="font-size:11px; color:#6b7280;">manager review</div>
+                    </div>
+                </div>
+
                 <div class="form-grid">
                     <div class="form-group">
                         <label>Booking ID *</label>
-                        <input type="text" id="n-booking-id" placeholder="e.g. GRP-20260520-C6A6D9A7">
+                        <input type="text" id="n-booking-id" placeholder="e.g. INQ-20260608-XXXXXXXX">
                     </div>
                     <div class="form-group">
                         <label>Proposed Room Rate ($/night)</label>
@@ -279,8 +299,19 @@
                         <textarea id="n-message" rows="3" placeholder="e.g. Can we get a lower room rate for 75 rooms over 3 nights?"></textarea>
                     </div>
                 </div>
-                <div class="actions">
-                    <button class="btn btn-primary" onclick="submitNegotiation()">Submit Counter-Offer</button>
+                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-top:16px;">
+                    <button onclick="submitNegotiation('ACCEPT')" style="background:#059669; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#10003;</span>Accept
+                    </button>
+                    <button onclick="submitNegotiation('COUNTER')" style="background:#2563eb; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#8596;</span>Counter
+                    </button>
+                    <button onclick="submitNegotiation('DECLINE')" style="background:#dc2626; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#10005;</span>Decline
+                    </button>
+                    <button onclick="submitNegotiation('ESCALATE')" style="background:#7c3aed; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#8679;</span>Escalate
+                    </button>
                 </div>
                 <div class="negotiation-result" id="negotiation-result"></div>
             </div>
@@ -931,13 +962,15 @@
             }
         });
 
-        async function submitNegotiation() {
+        async function submitNegotiation(action) {
             const bookingId = document.getElementById('n-booking-id').value;
             if (!bookingId) { showToast('Please enter a Booking ID'); return; }
+            if (action === 'COUNTER' && !document.getElementById('n-rate').value) { showToast('Enter a rate for counter-offer'); return; }
 
             const payload = {
-                proposed_rate: parseInt(document.getElementById('n-rate').value),
+                proposed_room_rate: parseInt(document.getElementById('n-rate').value) || 0,
                 message: document.getElementById('n-message').value,
+                action: action || 'COUNTER',
             };
 
             try {
@@ -982,7 +1015,7 @@
                     <p style="margin-top:12px;"><strong style="color:#1e293b;">Message:</strong> ${data.message_to_client || data.message || 'N/A'}</p>
                     ${data.counter_proposal ? `<p style="margin-top:8px;"><strong style="color:#1e293b;">Counter Proposal:</strong> $${data.counter_proposal.room_rate}/night ${data.counter_proposal.includes_breakfast ? '+ Breakfast' : ''} ${data.counter_proposal.late_checkout ? '+ Late Checkout' : ''}</p>` : ''}
                     <p style="margin-top:8px;"><strong style="color:#1e293b;">Turn:</strong> ${data.turn_number || '—'} | <strong style="color:#1e293b;">Status:</strong> ${data.status || '—'}</p>
-                    ${data.email_sent ? '<p style="margin-top:8px; color:#4ade80; font-size:12px;">✓ Email notification sent to guest</p>' : ''}
+                    ${data.email_delivered ? '<p style="margin-top:8px; color:#4ade80; font-size:12px;">✓ Email notification sent to customer</p>' : ''}
                     ${availabilityHtml}
                 `;
                 showToast(`Negotiation: ${data.decision || data.status}`);
