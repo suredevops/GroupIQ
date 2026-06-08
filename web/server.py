@@ -76,42 +76,57 @@ def get_bedrock_client():
     return _bedrock_client
 
 def invoke_bedrock_negotiation(booking, counter_offer):
-    """Use AWS Bedrock AI to evaluate a counter-offer with zone-based pricing."""
+    """Use AWS Bedrock AI to evaluate a counter-offer using Marriott's real-time revenue management logic."""
     client = get_bedrock_client()
 
-    # Look up property zone info for dynamic pricing
+    # Look up property zone + brand tier for pricing
     property_id = booking.get("property_id", "")
-    zone_info = GroupIQServer.PROPERTY_ZONES.get(property_id, {"zone": "standard", "base_rate": 265, "max_discount": 0.35})
+    zone_info = GroupIQServer.PROPERTY_ZONES.get(property_id, {"zone": "standard", "base_rate": 150, "max_discount": 0.30, "brand_tier": "premium", "location": "Unknown"})
     zone = zone_info["zone"]
+    brand_tier = zone_info.get("brand_tier", "premium")
+    location_desc = zone_info.get("location", "")
     max_discount_pct = int(zone_info["max_discount"] * 100)
     zone_base_rate = zone_info["base_rate"]
 
-    system_prompt = f"""You are a Marriott hotel revenue management AI. Evaluate counter-offers for group bookings.
-Respond ONLY with valid JSON: {{"decision": "ACCEPT" or "COUNTER" or "ESCALATE", "message_to_client": "professional message to the customer", "counter_proposal": {{"room_rate": number, "includes_breakfast": true/false, "late_checkout": true/false}}, "reasoning": "internal reasoning"}}
-Property Zone: {zone.upper()}
-Pricing Rules for this zone:
-- Zone base rate: ${zone_base_rate}/night
-- Maximum allowed discount: {max_discount_pct}% (floor rate: ${round(zone_base_rate * (1 - zone_info['max_discount']))}/night)
-- ACCEPT if requested rate >= floor rate
-- COUNTER with value-adds (breakfast, late checkout for outskirts) if request is 5-15% below floor
-- ESCALATE if request is far below floor rate (unreasonable)
-- Outskirts properties can offer more perks: late checkout, room upgrades, parking
-- Prominent/city-center properties: tighter margins, but can offer breakfast, lounge access
-- Always be professional and courteous in message_to_client"""
+    system_prompt = f"""You are the Marriott International Group Sales Revenue Management AI.
+You follow Marriott's real-world pricing strategy based on Brand Tier, Property Zone, and Seasonality.
+
+Respond ONLY with valid JSON:
+{{"decision": "ACCEPT" or "COUNTER" or "ESCALATE", "message_to_client": "professional Marriott-branded message", "counter_proposal": {{"room_rate": number, "includes_breakfast": true/false, "late_checkout": true/false, "room_upgrade": true/false}}, "reasoning": "internal revenue management reasoning"}}
+
+Property Details:
+- Brand Tier: {brand_tier.upper()} ({"Ritz-Carlton / W / JW Marriott — strictest yield" if brand_tier == "luxury" else "Westin / Sheraton / Marriott — moderate flexibility" if brand_tier == "premium" else "Courtyard / Four Points — volume-driven, flexible"})
+- Zone: {zone.upper()} — {location_desc}
+- Published Group BAR: ${zone_base_rate}/night
+- Maximum Group Discount: {max_discount_pct}%
+- Floor Rate: ${round(zone_base_rate * (1 - zone_info['max_discount']))}/night
+
+Marriott Revenue Rules:
+1. LUXURY tier: Max {max_discount_pct}% discount. Offer lounge access, spa credit — NEVER deep discounts.
+2. PREMIUM tier: Standard group discount. Offer breakfast, late checkout for outskirts properties.
+3. SELECT tier: Volume-driven. Can offer max discount + parking, breakfast, upgrade for large groups (50+ rooms).
+4. OUTSKIRTS properties: More flexibility — late checkout, free parking, room upgrade allowed.
+5. PROMINENT/CBD properties: Tighter margins — only breakfast/lounge as value-adds, protect rate integrity.
+6. ACCEPT if proposed rate >= floor rate.
+7. COUNTER if proposed rate is within 10% below floor — meet midway, add value-adds.
+8. ESCALATE if offer is unreasonably low (>10% below floor) — route to Senior Revenue Manager.
+9. All responses must maintain Marriott brand voice: professional, warm, solution-oriented."""
 
     base_rate = float(booking.get("base_room_rate", booking.get("dynamic_room_rate", zone_base_rate)))
     floor_rate = round(base_rate * (1 - zone_info["max_discount"]))
-    user_msg = f"""Evaluate this counter-offer:
-- Property Zone: {zone} ({"wider discount range, more perks available" if zone == "outskirts" else "premium location, tighter margins"})
-- Base Room Rate: ${base_rate}/night
-- Floor Rate (min acceptable): ${floor_rate}/night
-- Max Discount: {max_discount_pct}%
-- Rooms: {booking.get('num_rooms', 0)} | Nights: {booking.get('num_nights', 0)}
-- Event: {booking.get('event_type', 'event')}, Date: {booking.get('event_date', 'TBD')}
-- Client Name: {booking.get('contact_name', 'Guest')}
-- Client Requested Rate: ${counter_offer.get('proposed_room_rate', 'Not specified')}/night
+    num_rooms = int(booking.get('num_rooms', 0))
+    volume_note = "Large group (50+ rooms) — additional flexibility applies" if num_rooms >= 50 else f"Standard group ({num_rooms} rooms)"
+
+    user_msg = f"""Evaluate this group booking counter-offer:
+- Brand: {brand_tier.upper()} | Zone: {zone.upper()} | Location: {location_desc}
+- Published BAR: ${base_rate}/night | Floor: ${floor_rate}/night | Max Discount: {max_discount_pct}%
+- Group Size: {num_rooms} rooms × {booking.get('num_nights', 0)} nights ({volume_note})
+- Total Room-Nights: {num_rooms * int(booking.get('num_nights', 1))}
+- Event Type: {booking.get('event_type', 'event')} | Date: {booking.get('event_date', 'TBD')}
+- Client: {booking.get('contact_name', 'Guest')}
+- Client Proposed Rate: ${counter_offer.get('proposed_room_rate', 'Not specified')}/night
 - Client Message: {counter_offer.get('message', 'No message')}
-- Action requested: {counter_offer.get('action', 'COUNTER')}"""
+- Client Action: {counter_offer.get('action', 'COUNTER')}"""
 
     body = json.dumps({
         "messages": [{"role": "user", "content": [{"text": user_msg}]}],
@@ -868,43 +883,78 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             print(f"[INQUIRY-ERROR] {e}")
             self._json_response(500, {"error": str(e)})
 
-    # Property zone-based pricing: outskirts get more discount flexibility
+    # Marriott Real-Time Revenue Management: Zone + Brand Tier Pricing
+    # Brand Tiers: Luxury (Ritz-Carlton, W, JW Marriott) > Premium (Westin, Sheraton, Marriott, Le Meridien) > Select (Courtyard, Four Points)
+    # Zone: "prominent" = CBD/prime tourist areas; "outskirts" = suburban/IT corridors/airport
+    # Group discount: Prominent max 15-22%; Outskirts max 30-40% (volume-dependent)
+    # Rates are USD/night for group block (10+ rooms), based on Marriott Bonvoy published BAR rates
     PROPERTY_ZONES = {
-        # Prominent / City Center properties — tighter discount (max 25%)
-        "MRIOTT-HYD-001": {"zone": "prominent", "base_rate": 320, "max_discount": 0.25},
-        "FOURPT-HYD-001": {"zone": "prominent", "base_rate": 290, "max_discount": 0.25},
-        "RITZ-BLR-001": {"zone": "prominent", "base_rate": 450, "max_discount": 0.20},
-        "SHRATN-BLR-001": {"zone": "prominent", "base_rate": 380, "max_discount": 0.25},
-        "MRIOTT-BOM-001": {"zone": "prominent", "base_rate": 420, "max_discount": 0.22},
-        "JWMARR-DEL-001": {"zone": "prominent", "base_rate": 480, "max_discount": 0.20},
-        "MRIOTT-DEL-001": {"zone": "prominent", "base_rate": 380, "max_discount": 0.25},
-        "RITZ-DEL-001": {"zone": "prominent", "base_rate": 550, "max_discount": 0.18},
-        "MRIOTT-GOA-001": {"zone": "prominent", "base_rate": 350, "max_discount": 0.25},
-        "WGOA-GOA-001": {"zone": "prominent", "base_rate": 520, "max_discount": 0.20},
-        # Outskirts / Suburban properties — wider discount range (max 45%)
-        "WESTIN-HYD-001": {"zone": "outskirts", "base_rate": 220, "max_discount": 0.40},
-        "SHRATN-HYD-001": {"zone": "outskirts", "base_rate": 200, "max_discount": 0.42},
-        "COURTY-HYD-001": {"zone": "outskirts", "base_rate": 180, "max_discount": 0.45},
-        "MRIOTT-BLR-001": {"zone": "outskirts", "base_rate": 250, "max_discount": 0.38},
-        "COURTY-BLR-001": {"zone": "outskirts", "base_rate": 190, "max_discount": 0.45},
-        "WESTIN-BOM-001": {"zone": "outskirts", "base_rate": 230, "max_discount": 0.40},
-        "COURTY-BOM-001": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.45},
-        "JWMARR-BOM-002": {"zone": "outskirts", "base_rate": 240, "max_discount": 0.38},
-        "WESTIN-DEL-001": {"zone": "outskirts", "base_rate": 210, "max_discount": 0.42},
-        "SHRATN-DEL-001": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.45},
-        "MRIOTT-MAA-001": {"zone": "outskirts", "base_rate": 200, "max_discount": 0.42},
-        "WESTIN-MAA-001": {"zone": "outskirts", "base_rate": 185, "max_discount": 0.45},
-        "MRIOTT-PNQ-001": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.42},
-        "WESTIN-PNQ-001": {"zone": "outskirts", "base_rate": 180, "max_discount": 0.45},
+        # ─── HYDERABAD ───────────────────────────────────────────────────────
+        "MRIOTT-HYD-001": {"zone": "prominent", "base_rate": 145, "max_discount": 0.20, "brand_tier": "premium", "location": "Tank Bund, City Center"},
+        "FOURPT-HYD-001": {"zone": "prominent", "base_rate": 89, "max_discount": 0.22, "brand_tier": "select", "location": "Banjara Hills"},
+        "WESTIN-HYD-001": {"zone": "outskirts", "base_rate": 120, "max_discount": 0.35, "brand_tier": "premium", "location": "HITEC City / Mindspace IT Park"},
+        "SHRATN-HYD-001": {"zone": "outskirts", "base_rate": 105, "max_discount": 0.38, "brand_tier": "premium", "location": "Gachibowli / Financial District"},
+        "COURTY-HYD-001": {"zone": "outskirts", "base_rate": 79, "max_discount": 0.40, "brand_tier": "select", "location": "Madhapur / HITEC City"},
+        # ─── BENGALURU ───────────────────────────────────────────────────────
+        "RITZ-BLR-001": {"zone": "prominent", "base_rate": 285, "max_discount": 0.15, "brand_tier": "luxury", "location": "Residency Road, CBD"},
+        "SHRATN-BLR-001": {"zone": "prominent", "base_rate": 165, "max_discount": 0.20, "brand_tier": "premium", "location": "Malleswaram / Brigade Gateway"},
+        "WESTIN-BLR-001": {"zone": "prominent", "base_rate": 155, "max_discount": 0.22, "brand_tier": "premium", "location": "Koramangala"},
+        "MRIOTT-BLR-001": {"zone": "outskirts", "base_rate": 130, "max_discount": 0.35, "brand_tier": "premium", "location": "Whitefield / EPIP Zone"},
+        "COURTY-BLR-001": {"zone": "outskirts", "base_rate": 85, "max_discount": 0.40, "brand_tier": "select", "location": "Outer Ring Road, Marathahalli"},
+        # ─── MUMBAI ──────────────────────────────────────────────────────────
+        "MRIOTT-BOM-001": {"zone": "prominent", "base_rate": 280, "max_discount": 0.18, "brand_tier": "luxury", "location": "Juhu Beach, West Mumbai"},
+        "SHRATN-BOM-001": {"zone": "prominent", "base_rate": 175, "max_discount": 0.20, "brand_tier": "premium", "location": "Powai Lake"},
+        "WESTIN-BOM-001": {"zone": "outskirts", "base_rate": 140, "max_discount": 0.35, "brand_tier": "premium", "location": "Goregaon East / Film City"},
+        "COURTY-BOM-001": {"zone": "outskirts", "base_rate": 95, "max_discount": 0.38, "brand_tier": "select", "location": "Andheri East / MIDC"},
+        "JWMARR-BOM-002": {"zone": "outskirts", "base_rate": 195, "max_discount": 0.30, "brand_tier": "luxury", "location": "Sahar / Airport Zone"},
+        # ─── NEW DELHI / NCR ─────────────────────────────────────────────────
+        "JWMARR-DEL-001": {"zone": "prominent", "base_rate": 245, "max_discount": 0.18, "brand_tier": "luxury", "location": "Aerocity / IGI Airport Hospitality District"},
+        "MRIOTT-DEL-001": {"zone": "prominent", "base_rate": 185, "max_discount": 0.20, "brand_tier": "premium", "location": "Aerocity"},
+        "RITZ-DEL-001": {"zone": "prominent", "base_rate": 320, "max_discount": 0.15, "brand_tier": "luxury", "location": "Gurugram / DLF Cyber Hub"},
+        "SHRATN-DEL-001": {"zone": "prominent", "base_rate": 155, "max_discount": 0.22, "brand_tier": "premium", "location": "Saket / South Delhi"},
+        "WESTIN-DEL-001": {"zone": "outskirts", "base_rate": 145, "max_discount": 0.32, "brand_tier": "premium", "location": "MG Road, Gurugram"},
+        # ─── CHENNAI ─────────────────────────────────────────────────────────
+        "SHRATN-MAA-001": {"zone": "prominent", "base_rate": 135, "max_discount": 0.22, "brand_tier": "premium", "location": "ECR / East Coast Road"},
+        "MRIOTT-MAA-001": {"zone": "outskirts", "base_rate": 110, "max_discount": 0.35, "brand_tier": "premium", "location": "OMR / Sholinganallur IT Corridor"},
+        "WESTIN-MAA-001": {"zone": "outskirts", "base_rate": 100, "max_discount": 0.38, "brand_tier": "premium", "location": "Velachery"},
+        "FOURPT-MAA-001": {"zone": "outskirts", "base_rate": 72, "max_discount": 0.40, "brand_tier": "select", "location": "OMR Perungudi"},
+        # ─── GOA ─────────────────────────────────────────────────────────────
+        "WGOA-GOA-001": {"zone": "prominent", "base_rate": 350, "max_discount": 0.15, "brand_tier": "luxury", "location": "Vagator Beach / Premium"},
+        "MRIOTT-GOA-001": {"zone": "prominent", "base_rate": 195, "max_discount": 0.20, "brand_tier": "premium", "location": "Miramar Beach, Panaji"},
+        "WESTIN-GOA-001": {"zone": "outskirts", "base_rate": 165, "max_discount": 0.32, "brand_tier": "premium", "location": "Anjuna / North Goa"},
+        "COURTY-GOA-001": {"zone": "outskirts", "base_rate": 95, "max_discount": 0.38, "brand_tier": "select", "location": "Colva / South Goa"},
+        # ─── JAIPUR ──────────────────────────────────────────────────────────
+        "JWMARR-JAI-001": {"zone": "prominent", "base_rate": 185, "max_discount": 0.18, "brand_tier": "luxury", "location": "Ajmer Road / City Outskirts Premium"},
+        "MRIOTT-JAI-001": {"zone": "prominent", "base_rate": 130, "max_discount": 0.22, "brand_tier": "premium", "location": "Ashram Marg / Central Jaipur"},
+        "SHRATN-JAI-001": {"zone": "outskirts", "base_rate": 105, "max_discount": 0.35, "brand_tier": "premium", "location": "Kukas / Jaipur Outskirts"},
+        # ─── PUNE ────────────────────────────────────────────────────────────
+        "JWMARR-PNQ-001": {"zone": "prominent", "base_rate": 195, "max_discount": 0.18, "brand_tier": "luxury", "location": "Senapati Bapat Road / CBD"},
+        "MRIOTT-PNQ-001": {"zone": "prominent", "base_rate": 135, "max_discount": 0.22, "brand_tier": "premium", "location": "Senapati Bapat Road"},
+        "WESTIN-PNQ-001": {"zone": "prominent", "base_rate": 145, "max_discount": 0.22, "brand_tier": "premium", "location": "Koregaon Park"},
+        "FOURPT-PNQ-001": {"zone": "outskirts", "base_rate": 75, "max_discount": 0.40, "brand_tier": "select", "location": "Nagar Road / Kharadi IT Park"},
+        # ─── KOLKATA ─────────────────────────────────────────────────────────
+        "JWMARR-CCU-001": {"zone": "prominent", "base_rate": 175, "max_discount": 0.20, "brand_tier": "luxury", "location": "Salt Lake / Sector V IT Hub"},
+        "MRIOTT-CCU-001": {"zone": "outskirts", "base_rate": 110, "max_discount": 0.35, "brand_tier": "premium", "location": "Rajarhat / New Town"},
+        "WESTIN-CCU-001": {"zone": "outskirts", "base_rate": 105, "max_discount": 0.35, "brand_tier": "premium", "location": "Rajarhat / New Town"},
+        # ─── NEW YORK ────────────────────────────────────────────────────────
+        "RITZ-NYC-001": {"zone": "prominent", "base_rate": 895, "max_discount": 0.12, "brand_tier": "luxury", "location": "Central Park South"},
+        "MRIOTT-NYC-001": {"zone": "prominent", "base_rate": 495, "max_discount": 0.18, "brand_tier": "premium", "location": "Times Square / Broadway"},
+        "WESTIN-NYC-001": {"zone": "prominent", "base_rate": 425, "max_discount": 0.20, "brand_tier": "premium", "location": "Times Square West 43rd"},
+        "SHRATN-NYC-001": {"zone": "prominent", "base_rate": 385, "max_discount": 0.22, "brand_tier": "premium", "location": "7th Ave / Midtown"},
+        "COURTY-NYC-001": {"zone": "prominent", "base_rate": 295, "max_discount": 0.25, "brand_tier": "select", "location": "Broadway / Upper West"},
+        # ─── LOS ANGELES ─────────────────────────────────────────────────────
+        "WESTIN-LAX-001": {"zone": "prominent", "base_rate": 295, "max_discount": 0.20, "brand_tier": "premium", "location": "Downtown LA / Figueroa St"},
+        "MRIOTT-LAX-001": {"zone": "outskirts", "base_rate": 175, "max_discount": 0.32, "brand_tier": "premium", "location": "LAX Airport / Century Blvd"},
+        "SHRATN-LAX-001": {"zone": "outskirts", "base_rate": 165, "max_discount": 0.35, "brand_tier": "premium", "location": "Universal City / Studio Zone"},
     }
 
     def _get_pricing_for_property(self, property_id):
-        """Get zone-based pricing rules for a property."""
+        """Get zone-based pricing rules for a property using Marriott brand tier logic."""
         zone_info = self.PROPERTY_ZONES.get(property_id)
         if zone_info:
             return zone_info
-        # Default: mid-range
-        return {"zone": "standard", "base_rate": 265, "max_discount": 0.35}
+        # Default: mid-tier premium brand, moderate rate
+        return {"zone": "standard", "base_rate": 150, "max_discount": 0.30, "brand_tier": "premium", "location": "Standard Location"}
 
     def _handle_negotiate(self, booking_id, body):
         """Submit a counter-offer for negotiation."""
@@ -990,46 +1040,61 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             response_data = None
                     if not response_data:
                         proposed_rate = float(payload_data.get("proposed_room_rate", 0))
-                        # Zone-based pricing: outskirts properties allow more discount
                         booking_for_pricing = backup.get_booking(booking_id) or {}
                         prop_id = booking_for_pricing.get("property_id", "")
                         zone_info = self._get_pricing_for_property(prop_id)
                         base_rate = zone_info["base_rate"]
                         max_discount = zone_info["max_discount"]
                         zone = zone_info["zone"]
+                        brand_tier = zone_info.get("brand_tier", "premium")
+                        location = zone_info.get("location", "")
                         min_acceptable = round(base_rate * (1 - max_discount))
+                        num_rooms = int(booking_for_pricing.get("num_rooms", payload_data.get("num_rooms", 10)))
 
-                        if proposed_rate >= base_rate:
-                            response_data = {
-                                "decision": "ACCEPT",
-                                "status": "ACCEPTED",
-                                "message_to_client": f"Your rate of ${proposed_rate:.0f}/night is accepted! Booking confirmed.",
-                                "booking_id": booking_id,
-                                "confirmed_rate": proposed_rate,
-                                "zone": zone,
-                            }
-                        elif proposed_rate >= min_acceptable:
-                            counter_rate = round((proposed_rate + base_rate) / 2)
-                            response_data = {
-                                "decision": "COUNTER",
-                                "status": "NEGOTIATING",
-                                "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. For this {zone} location, we can offer ${counter_rate:.0f}/night (base: ${base_rate}/night, max discount: {int(max_discount*100)}%). Includes complimentary breakfast.",
-                                "counter_proposal": {
-                                    "room_rate": counter_rate,
-                                    "includes_breakfast": True,
-                                    "late_checkout": zone == "outskirts",
-                                },
-                                "booking_id": booking_id,
-                                "zone": zone,
-                                "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
-                            }
+                        if proposed_rate >= min_acceptable:
+                            if proposed_rate >= base_rate:
+                                response_data = {
+                                    "decision": "ACCEPT",
+                                    "status": "ACCEPTED",
+                                    "message_to_client": f"Thank you for choosing Marriott. Your group rate of ${proposed_rate:.0f}/night at our {location} property is confirmed. We look forward to welcoming your group.",
+                                    "booking_id": booking_id,
+                                    "confirmed_rate": proposed_rate,
+                                    "zone": zone,
+                                    "brand_tier": brand_tier,
+                                }
+                            else:
+                                counter_rate = round((proposed_rate + base_rate) / 2)
+                                perks = []
+                                if brand_tier == "luxury":
+                                    perks = ["Executive Lounge access", "complimentary breakfast buffet"]
+                                elif zone == "outskirts":
+                                    perks = ["complimentary breakfast", "late checkout until 2 PM", "free parking"]
+                                else:
+                                    perks = ["complimentary breakfast", "dedicated group check-in"]
+                                perks_text = ", ".join(perks)
+                                response_data = {
+                                    "decision": "COUNTER",
+                                    "status": "NEGOTIATING",
+                                    "message_to_client": f"Thank you for your interest in our {brand_tier.title()} property at {location}. We appreciate your offer of ${proposed_rate:.0f}/night. For your group of {num_rooms} rooms, we can offer a special rate of ${counter_rate:.0f}/night (published BAR: ${base_rate}) including {perks_text}.",
+                                    "counter_proposal": {
+                                        "room_rate": counter_rate,
+                                        "includes_breakfast": True,
+                                        "late_checkout": zone == "outskirts" or brand_tier == "luxury",
+                                        "room_upgrade": brand_tier == "select" and num_rooms >= 50,
+                                    },
+                                    "booking_id": booking_id,
+                                    "zone": zone,
+                                    "brand_tier": brand_tier,
+                                    "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
+                                }
                         else:
                             response_data = {
                                 "decision": "ESCALATE",
                                 "status": "ESCALATED",
-                                "message_to_client": f"Your offer of ${proposed_rate:.0f}/night is below our minimum of ${min_acceptable}/night for this {zone} property (base: ${base_rate}, max discount: {int(max_discount*100)}%). Escalated to Senior Sales Manager.",
+                                "message_to_client": f"Thank you for your offer of ${proposed_rate:.0f}/night. This is below our group floor rate of ${min_acceptable}/night for this {brand_tier.title()} {zone} property at {location}. We've escalated this to our Senior Revenue Manager who will review and respond within 24 hours with the best possible arrangement.",
                                 "booking_id": booking_id,
                                 "zone": zone,
+                                "brand_tier": brand_tier,
                                 "pricing_info": {"base_rate": base_rate, "min_acceptable": min_acceptable, "max_discount_pct": int(max_discount * 100)},
                             }
 
