@@ -578,6 +578,8 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_nearby_properties(location)
             elif self.path == "/properties" or self.path.startswith("/properties?"):
                 self._handle_all_locations()
+            elif self.path.startswith("/s3/"):
+                self._handle_s3_browse()
             else:
                 super().do_GET()
         except BrokenPipeError:
@@ -1476,6 +1478,91 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
             ],
         }
         self._json_response(200, {"locations": locations})
+
+    def _handle_s3_browse(self):
+        """Browse S3 buckets and list objects."""
+        try:
+            path_parts = self.path.split("/s3/")[1].split("?")
+            bucket_name = path_parts[0] if path_parts[0] else ""
+            prefix = ""
+            if "?" in self.path and "prefix=" in self.path:
+                import urllib.parse
+                qs = urllib.parse.parse_qs(self.path.split("?")[1])
+                prefix = qs.get("prefix", [""])[0]
+
+            s3_client = session.client("s3", endpoint_url=LOCALSTACK_URL)
+
+            if not bucket_name:
+                # List all buckets
+                result = s3_client.list_buckets()
+                buckets = []
+                for b in result.get("Buckets", []):
+                    # Get object count
+                    try:
+                        objs = s3_client.list_objects_v2(Bucket=b["Name"])
+                        count = objs.get("KeyCount", 0)
+                        total_size = sum(o.get("Size", 0) for o in objs.get("Contents", []))
+                    except Exception:
+                        count = 0
+                        total_size = 0
+                    buckets.append({
+                        "name": b["Name"],
+                        "created": b["CreationDate"].isoformat() if b.get("CreationDate") else "",
+                        "objects": count,
+                        "total_size_bytes": total_size,
+                        "total_size": self._format_size(total_size),
+                    })
+                self._json_response(200, {"buckets": buckets})
+            else:
+                # List objects in a bucket
+                params = {"Bucket": bucket_name, "MaxKeys": 1000}
+                if prefix:
+                    params["Prefix"] = prefix
+                result = s3_client.list_objects_v2(**params)
+                objects = []
+                for obj in result.get("Contents", []):
+                    objects.append({
+                        "key": obj["Key"],
+                        "size_bytes": obj["Size"],
+                        "size": self._format_size(obj["Size"]),
+                        "last_modified": obj["LastModified"].isoformat() if obj.get("LastModified") else "",
+                        "extension": obj["Key"].rsplit(".", 1)[-1] if "." in obj["Key"] else "",
+                    })
+                # Group by folder
+                folders = {}
+                files = []
+                for obj in objects:
+                    key = obj["key"]
+                    if prefix:
+                        key = key[len(prefix):]
+                    parts = key.split("/")
+                    if len(parts) > 1:
+                        folder = parts[0]
+                        if folder not in folders:
+                            folders[folder] = {"name": folder, "count": 0, "total_size": 0}
+                        folders[folder]["count"] += 1
+                        folders[folder]["total_size"] += obj["size_bytes"]
+                    else:
+                        files.append(obj)
+
+                self._json_response(200, {
+                    "bucket": bucket_name,
+                    "prefix": prefix,
+                    "folders": list(folders.values()),
+                    "files": files,
+                    "total_objects": result.get("KeyCount", 0),
+                })
+        except Exception as e:
+            self._json_response(500, {"error": str(e)})
+
+    @staticmethod
+    def _format_size(size_bytes):
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        else:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
 
     def _ensure_booking_in_dynamodb(self, booking_id):
         """Seed booking from backup into DynamoDB if it doesn't exist there."""

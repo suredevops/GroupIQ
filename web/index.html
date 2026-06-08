@@ -154,6 +154,7 @@
             <div class="tab" onclick="switchTab('inventory')">Room Inventory</div>
             <div class="tab" onclick="switchTab('properties')">Nearby Properties</div>
             <div class="tab" onclick="switchTab('reports')">Reports</div>
+            <div class="tab" onclick="switchTab('s3docs')">S3 Documents</div>
             <div class="tab" onclick="switchTab('reminders')">Reminders</div>
             <div class="tab" onclick="switchTab('compliance')">TIP.AI Compliance</div>
         </div>
@@ -455,6 +456,25 @@
                     </div>
                 </div>
                 <div id="report-result" style="margin-top:20px;"></div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="tab-s3docs">
+            <div class="section">
+                <h2>S3 Document Browser</h2>
+                <p style="font-size:13px; color:#64748b; margin-bottom:16px;">Browse all documents stored in LocalStack S3 buckets. Click any file to view/download.</p>
+                <div style="display:flex; gap:10px; margin-bottom:20px;">
+                    <button class="btn btn-primary" onclick="loadS3Bucket('groupiq-documents')" id="btn-s3-docs" style="font-size:12px;">groupiq-documents</button>
+                    <button class="btn btn-secondary" onclick="loadS3Bucket('groupiq-bookings')" id="btn-s3-bookings" style="font-size:12px;">groupiq-bookings</button>
+                    <button class="btn btn-secondary" onclick="loadS3Bucket('groupiq-reports')" id="btn-s3-reports" style="font-size:12px;">groupiq-reports</button>
+                    <button class="btn btn-secondary" onclick="refreshS3()" style="font-size:12px; margin-left:auto;">↻ Refresh</button>
+                </div>
+                <div id="s3-summary" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:20px;"></div>
+                <div id="s3-browser" style="min-height:200px;">
+                    <div style="text-align:center; padding:40px; color:#94a3b8;">
+                        <p style="font-size:14px;">Click a bucket above to browse its contents</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -814,6 +834,7 @@
             if (name === 'bookings') loadBookings();
             if (name === 'properties') searchProperties();
             if (name === 'reports') loadReport();
+            if (name === 's3docs') loadS3Overview();
         }
 
         function formatCurrency(amount) {
@@ -1812,6 +1833,118 @@
         loadBookings();
         // Auto-refresh bookings every 15 seconds for real-time updates
         setInterval(loadBookings, 15000);
+
+        // ─── S3 Document Browser ──────────────────────────────────────────
+        let currentS3Bucket = '';
+
+        async function loadS3Overview() {
+            try {
+                const res = await fetch(API_BASE + '/s3/');
+                if (!res.ok) throw new Error('Failed to load S3 buckets');
+                const data = await res.json();
+                const summary = document.getElementById('s3-summary');
+                summary.innerHTML = data.buckets.map(b => `
+                    <div style="background:white; border:1px solid #e2e8f0; border-radius:12px; padding:16px; cursor:pointer; transition:all 0.2s;" onclick="loadS3Bucket('${b.name}')" onmouseover="this.style.borderColor='#dc2626'" onmouseout="this.style.borderColor='#e2e8f0'">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                            <span style="font-size:20px;">🪣</span>
+                            <span style="font-weight:700; font-size:13px; color:#1e293b;">${b.name}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:12px; color:#64748b;">
+                            <span>${b.objects} files</span>
+                            <span>${b.total_size}</span>
+                        </div>
+                    </div>
+                `).join('');
+                if (!currentS3Bucket && data.buckets.length > 0) {
+                    loadS3Bucket(data.buckets[0].name);
+                }
+            } catch (e) {
+                document.getElementById('s3-summary').innerHTML = `<div style="grid-column:1/-1;padding:20px;text-align:center;color:#dc2626;">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function loadS3Bucket(bucketName, prefix) {
+            currentS3Bucket = bucketName;
+            document.querySelectorAll('[id^="btn-s3-"]').forEach(b => b.className = 'btn btn-secondary');
+            const activeBtn = document.getElementById('btn-s3-' + bucketName.replace('groupiq-', ''));
+            if (activeBtn) activeBtn.className = 'btn btn-primary';
+
+            const browser = document.getElementById('s3-browser');
+            browser.innerHTML = '<div style="text-align:center;padding:30px;color:#94a3b8;">Loading...</div>';
+
+            try {
+                let url = API_BASE + '/s3/' + bucketName;
+                if (prefix) url += '?prefix=' + encodeURIComponent(prefix);
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to load bucket');
+                const data = await res.json();
+
+                let html = '';
+
+                // Breadcrumb
+                html += `<div style="margin-bottom:16px; padding:10px 14px; background:#f8fafc; border-radius:8px; font-size:12px; color:#64748b; display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:14px;">🪣</span>
+                    <span style="cursor:pointer; color:#2563eb; font-weight:600;" onclick="loadS3Bucket('${bucketName}')">${bucketName}</span>`;
+                if (prefix) {
+                    const prefixParts = prefix.split('/').filter(Boolean);
+                    let accumulated = '';
+                    prefixParts.forEach((part, i) => {
+                        accumulated += part + '/';
+                        html += ` / <span style="cursor:pointer; color:#2563eb;" onclick="loadS3Bucket('${bucketName}', '${accumulated}')">${part}</span>`;
+                    });
+                }
+                html += `<span style="margin-left:auto; font-size:11px; color:#94a3b8;">${data.total_objects} objects</span></div>`;
+
+                // Folders
+                if (data.folders && data.folders.length > 0) {
+                    html += '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-bottom:16px;">';
+                    data.folders.forEach(f => {
+                        const folderPrefix = (prefix || '') + f.name + '/';
+                        html += `<div onclick="loadS3Bucket('${bucketName}', '${folderPrefix}')" style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:12px; cursor:pointer; transition:all 0.15s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:18px;">📁</span>
+                                <span style="font-weight:600; font-size:13px; color:#92400e;">${f.name}/</span>
+                            </div>
+                            <div style="font-size:11px; color:#78716c; margin-top:4px;">${f.count} files</div>
+                        </div>`;
+                    });
+                    html += '</div>';
+                }
+
+                // Files
+                if (data.files && data.files.length > 0) {
+                    html += '<table style="width:100%; border-collapse:collapse;">';
+                    html += '<thead><tr><th style="text-align:left;padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;border-bottom:2px solid #f1f5f9;">File</th><th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #f1f5f9;">Type</th><th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #f1f5f9;">Size</th><th style="padding:10px 14px;font-size:11px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #f1f5f9;">Modified</th></tr></thead><tbody>';
+                    data.files.forEach(f => {
+                        const fileName = f.key.split('/').pop();
+                        const icons = { py: '🐍', json: '📋', md: '📝', tf: '🏗️', sh: '⚙️', txt: '📄', html: '🌐', plist: '⚙️', pyc: '📦' };
+                        const icon = icons[f.extension] || '📄';
+                        const modified = f.last_modified ? new Date(f.last_modified).toLocaleString() : '';
+                        html += `<tr style="cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                            <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;"><span style="margin-right:8px;">${icon}</span><span style="font-weight:500; color:#1e293b; font-size:13px;">${fileName}</span></td>
+                            <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;"><span style="background:#f1f5f9;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#64748b;">.${f.extension}</span></td>
+                            <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:12px;color:#64748b;">${f.size}</td>
+                            <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:11px;color:#94a3b8;">${modified}</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table>';
+                }
+
+                if ((!data.folders || data.folders.length === 0) && (!data.files || data.files.length === 0)) {
+                    html += '<div style="text-align:center; padding:40px; color:#94a3b8;"><p style="font-size:36px; margin-bottom:10px;">📭</p><p>This bucket is empty</p></div>';
+                }
+
+                browser.innerHTML = html;
+            } catch (e) {
+                browser.innerHTML = `<div style="text-align:center;padding:30px;color:#dc2626;">Error: ${e.message}</div>`;
+            }
+        }
+
+        function refreshS3() {
+            loadS3Overview();
+            if (currentS3Bucket) loadS3Bucket(currentS3Bucket);
+            showToast('S3 view refreshed');
+        }
     </script>
 </body>
 </html>
