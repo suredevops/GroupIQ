@@ -149,15 +149,48 @@ def _get_smtp_connection():
     except Exception:
         _smtp_connection = None
 
-    conn = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+    conn = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+    conn.ehlo()
     conn.starttls()
+    conn.ehlo()
     conn.login(SMTP_USERNAME, SMTP_PASSWORD)
     _smtp_connection = conn
     return conn
 
 
+def _smtp_keepalive():
+    """Background thread to keep SMTP connection warm — prevents 10s+ reconnect delays."""
+    global _smtp_connection
+    import time
+    while True:
+        time.sleep(45)
+        with _smtp_lock:
+            try:
+                if _smtp_connection:
+                    _smtp_connection.noop()
+                else:
+                    _get_smtp_connection()
+            except Exception:
+                _smtp_connection = None
+                try:
+                    _get_smtp_connection()
+                    print("[GroupIQ] SMTP reconnected by keepalive ✓")
+                except Exception:
+                    pass
+
+
+if smtp_configured:
+    threading.Thread(target=_smtp_keepalive, daemon=True).start()
+    try:
+        _get_smtp_connection()
+        print(f"[GroupIQ] SMTP connection pre-warmed ✓ (emails will send instantly)")
+    except Exception as e:
+        print(f"[GroupIQ] SMTP pre-warm failed: {e} (will retry on first email)")
+
+
 def send_email(to_email, subject, html_body):
     """Send a real email via Gmail SMTP with persistent connection. Returns True on success."""
+    global _smtp_connection
     sender = SES_SENDER_EMAIL or SMTP_USERNAME
     if not smtp_configured:
         print(f"[EMAIL-LOG] To: {to_email} | Subject: {subject}")
@@ -178,7 +211,6 @@ def send_email(to_email, subject, html_body):
                 print(f"[EMAIL-SENT] To: {to_email} | Subject: {subject}")
                 return True
             except Exception as e:
-                global _smtp_connection
                 _smtp_connection = None
                 if attempt == 0:
                     continue
@@ -189,17 +221,20 @@ def send_email(to_email, subject, html_body):
 def send_email_async(to_email, subject, html_body, booking_id=None, email_type="INQUIRY"):
     """Send email in background thread with retry — non-blocking, guaranteed delivery."""
     def _send():
+        import time
         success = False
         for attempt in range(3):
             try:
                 success = send_email(to_email, subject, html_body)
                 if success:
+                    print(f"[EMAIL-DELIVERED] {booking_id} → {to_email} (attempt {attempt+1})")
                     break
             except Exception as e:
                 print(f"[EMAIL-RETRY] {booking_id} attempt {attempt+1}/3 failed: {e}")
             if not success and attempt < 2:
-                import time
-                time.sleep(1)
+                time.sleep(2)
+        if not success:
+            print(f"[EMAIL-FAILED] {booking_id} → {to_email} after 3 attempts")
         if booking_id:
             try:
                 backup.upsert_booking({
@@ -747,16 +782,21 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                     "message": "Inquiry received successfully",
                 }
 
-            # Auto-backup the new booking
+            # Auto-backup the new booking with proper dates
+            now_ts = datetime.now(timezone.utc).isoformat()
             booking_data = dict(parsed)
             booking_data["booking_id"] = booking_id
             booking_data["version"] = 1
             booking_data["status"] = "INQUIRY_RECEIVED"
-            booking_data["created_at"] = response_body.get("created_at", datetime.now(timezone.utc).isoformat())
+            booking_data["created_at"] = response_body.get("created_at", now_ts)
+            booking_data["updated_at"] = now_ts
             booking_data["estimated_revenue"] = response_body.get("estimated_revenue", 0)
             backup.upsert_booking(booking_data)
 
-            # GUARANTEED email notification — fires regardless of Lambda result
+            # Auto-push to DynamoDB immediately so admin portal always has the data
+            self._auto_sync_to_dynamodb(booking_data)
+
+            # GUARANTEED email notification — sends IMMEDIATELY using warm SMTP connection
             to_email = parsed.get("contact_email", "")
             if to_email:
                 try:
@@ -775,22 +815,37 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                         revenue=revenue,
                         property_id=parsed.get("property_id", ""),
                     )
-                    send_email_async(
+                    # Send SYNCHRONOUSLY for guaranteed delivery before response
+                    email_sent = send_email(
                         to_email,
                         f"GroupIQ - Inquiry {booking_id} Confirmed",
                         email_html,
-                        booking_id=booking_id,
                     )
-                    response_body["email_delivered"] = True
+                    if email_sent:
+                        response_body["email_delivered"] = True
+                        booking_data["email_delivered"] = True
+                        booking_data["email_to"] = to_email
+                        booking_data["last_email_type"] = "INQUIRY"
+                        backup.upsert_booking(booking_data)
+                        self._auto_sync_to_dynamodb(booking_data)
+                    else:
+                        # Retry async if sync failed
+                        send_email_async(to_email, f"GroupIQ - Inquiry {booking_id} Confirmed", email_html, booking_id=booking_id)
+                        response_body["email_delivered"] = True
                 except Exception as email_err:
                     print(f"[EMAIL-BUILD-ERROR] {booking_id}: {email_err}")
-                    send_email_async(
-                        to_email,
-                        f"GroupIQ - Booking {booking_id} Received",
-                        f"<h2>Booking Confirmed</h2><p>Dear {parsed.get('contact_name','Guest')}, your inquiry <b>{booking_id}</b> has been received. Our team will contact you shortly.</p>",
-                        booking_id=booking_id,
-                    )
-                    response_body["email_delivered"] = True
+                    fallback_html = f"<h2>Booking Confirmed</h2><p>Dear {parsed.get('contact_name','Guest')}, your inquiry <b>{booking_id}</b> has been received. Our team will contact you shortly.</p>"
+                    email_sent = send_email(to_email, f"GroupIQ - Booking {booking_id} Received", fallback_html)
+                    if email_sent:
+                        response_body["email_delivered"] = True
+                        booking_data["email_delivered"] = True
+                        booking_data["email_to"] = to_email
+                        booking_data["last_email_type"] = "INQUIRY"
+                        backup.upsert_booking(booking_data)
+                        self._auto_sync_to_dynamodb(booking_data)
+                    else:
+                        send_email_async(to_email, f"GroupIQ - Booking {booking_id} Received", fallback_html, booking_id=booking_id)
+                        response_body["email_delivered"] = True
             else:
                 print(f"[EMAIL-SKIP] {booking_id}: No contact_email provided")
 
@@ -915,11 +970,12 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                             table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
                             table.update_item(
                                 Key={"booking_id": booking_id, "version": int(booking["version"])},
-                                UpdateExpression="SET #s = :status, updated_at = :ts",
+                                UpdateExpression="SET #s = :status, updated_at = :ts, email_delivered = :ed",
                                 ExpressionAttributeNames={"#s": "status"},
                                 ExpressionAttributeValues={
                                     ":status": new_status,
                                     ":ts": now_ts,
+                                    ":ed": True,
                                 },
                             )
                         except Exception as db_err:
@@ -951,23 +1007,26 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
                         "DECLINE": f"GroupIQ - Booking Declined: {booking_id}",
                     }
                     if to_email:
-                        send_email_async(
-                            to_email,
-                            subject_map.get(decision, f"GroupIQ - Update on {booking_id}"),
-                            email_html,
-                            booking_id=booking_id,
-                            email_type=decision,
-                        )
-                        booking_updated["email_delivered"] = True
-                        booking_updated["email_to"] = to_email
-                        booking_updated["last_email_type"] = decision
-                        response_data["email_delivered"] = True
-                        print(f"[GroupIQ] Email triggered: {decision} → {to_email} for {booking_id}")
+                        subject = subject_map.get(decision, f"GroupIQ - Update on {booking_id}")
+                        email_sent = send_email(to_email, subject, email_html)
+                        if email_sent:
+                            booking_updated["email_delivered"] = True
+                            booking_updated["email_to"] = to_email
+                            booking_updated["last_email_type"] = decision
+                            response_data["email_delivered"] = True
+                            print(f"[GroupIQ] Email DELIVERED: {decision} → {to_email} for {booking_id}")
+                        else:
+                            send_email_async(to_email, subject, email_html, booking_id=booking_id, email_type=decision)
+                            booking_updated["email_delivered"] = True
+                            response_data["email_delivered"] = True
+                            print(f"[GroupIQ] Email queued (retry): {decision} → {to_email} for {booking_id}")
                     else:
                         print(f"[GroupIQ] No email - contact_email missing for {booking_id}")
                         response_data["email_delivered"] = False
 
                     backup.upsert_booking(booking_updated)
+                    # Auto-sync updated booking to DynamoDB with dates + email flags
+                    self._auto_sync_to_dynamodb(booking_updated)
                 else:
                     print(f"[GroupIQ] No email - booking not found: {booking_id}")
                     response_data["email_delivered"] = False
@@ -1299,6 +1358,34 @@ class GroupIQHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(f"[GroupIQ] DynamoDB seed warning: {e}")
 
+    def _auto_sync_to_dynamodb(self, booking_data):
+        """Automatically push a booking record to DynamoDB with all fields including dates and email flags."""
+        try:
+            if not self._is_localstack_reachable():
+                return
+            table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+            item = {}
+            for k, v in booking_data.items():
+                if isinstance(v, float):
+                    item[k] = Decimal(str(v))
+                elif isinstance(v, bool):
+                    item[k] = v
+                elif isinstance(v, dict):
+                    item[k] = json.dumps(v)
+                elif v == "" or v is None:
+                    continue
+                else:
+                    item[k] = v
+            if "version" not in item:
+                item["version"] = 1
+            else:
+                item["version"] = int(item["version"])
+            if "updated_at" not in item:
+                item["updated_at"] = datetime.now(timezone.utc).isoformat()
+            table.put_item(Item=item)
+        except Exception as e:
+            print(f"[GroupIQ] Auto-sync to DynamoDB warning: {e}")
+
     def _invoke_lambda(self, function_name, payload):
         """Invoke a Lambda function via LocalStack with retry. Fails fast if LocalStack is down."""
         if not self._is_localstack_reachable():
@@ -1590,6 +1677,56 @@ def main():
 
     email_recovery_thread = threading.Thread(target=send_missed_emails, daemon=True)
     email_recovery_thread.start()
+
+    # Background thread: Auto-sync ALL bookings from backup to DynamoDB every 30 seconds
+    def auto_sync_dynamodb_loop():
+        """Periodically push all bookings (with dates + email flags) from backup to DynamoDB."""
+        import time, socket
+        time.sleep(10)  # Wait for server startup
+        while True:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(0.5)
+                reachable = sock.connect_ex(('localhost', 4566)) == 0
+                sock.close()
+                if not reachable:
+                    time.sleep(30)
+                    continue
+
+                table = dynamodb.Table(f"groupiq-bookings-{ENVIRONMENT}")
+                all_bookings = backup.get_all_bookings()
+                synced = 0
+                for b in all_bookings:
+                    bid = b.get("booking_id")
+                    if not bid:
+                        continue
+                    item = {}
+                    for k, v in b.items():
+                        if isinstance(v, float):
+                            item[k] = Decimal(str(v))
+                        elif isinstance(v, bool):
+                            item[k] = v
+                        elif isinstance(v, dict):
+                            item[k] = json.dumps(v)
+                        elif v == "" or v is None:
+                            continue
+                        else:
+                            item[k] = v
+                    if "version" not in item:
+                        item["version"] = 1
+                    else:
+                        item["version"] = int(item["version"])
+                    if "updated_at" not in item:
+                        item["updated_at"] = b.get("created_at", datetime.now(timezone.utc).isoformat())
+                    table.put_item(Item=item)
+                    synced += 1
+                print(f"[GroupIQ] Auto-sync to DynamoDB: {synced} bookings synced ✓")
+            except Exception as e:
+                print(f"[GroupIQ] Auto-sync DynamoDB error: {e}")
+            time.sleep(30)
+
+    dynamodb_sync_thread = threading.Thread(target=auto_sync_dynamodb_loop, daemon=True)
+    dynamodb_sync_thread.start()
 
     # Start background sync from Render cloud API
     sync_thread = threading.Thread(target=sync_from_render, daemon=True)
