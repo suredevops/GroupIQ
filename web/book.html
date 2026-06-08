@@ -170,9 +170,9 @@
         <!-- Negotiate Tab -->
         <div id="tab-negotiate" class="tab-content">
             <div class="neg-section">
-                <h2>Negotiate Your Booking</h2>
+                <h2>Negotiate Booking</h2>
 
-                <!-- Rate Guide -->
+                <!-- Rate Guide - same as admin portal -->
                 <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:20px;">
                     <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; padding:14px; text-align:center;">
                         <div style="font-size:11px; font-weight:700; color:#059669; text-transform:uppercase; letter-spacing:0.5px;">Accept</div>
@@ -193,36 +193,34 @@
 
                 <div class="neg-timeline" id="negTimeline"></div>
 
-                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:20px; margin-bottom:20px;">
-                    <div class="form-grid" style="margin-bottom:0;">
-                        <div class="form-group">
-                            <label>Inquiry ID *</label>
-                            <input type="text" id="negId" placeholder="INQ-20260608-XXXXXXXX">
-                        </div>
-                        <div class="form-group">
-                            <label>Proposed Room Rate ($/night)</label>
-                            <input type="number" id="negRate" placeholder="Enter rate for counter">
-                        </div>
-                        <div class="form-group form-full">
-                            <label>Message (optional)</label>
-                            <textarea id="negMessage" rows="2" placeholder="Add a note..."></textarea>
-                        </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Booking ID *</label>
+                        <input type="text" id="negId" placeholder="e.g. INQ-20260608-XXXXXXXX">
+                    </div>
+                    <div class="form-group">
+                        <label>Proposed Room Rate ($/night)</label>
+                        <input type="number" id="negRate" placeholder="e.g. 265">
+                    </div>
+                    <div class="form-group form-full">
+                        <label>Message to Hotel</label>
+                        <textarea id="negMessage" rows="3" placeholder="e.g. Can we get a lower room rate for 75 rooms over 3 nights?"></textarea>
                     </div>
                 </div>
 
-                <!-- Single set of action buttons -->
-                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px;">
-                    <button onclick="submitAction('ACCEPT')" style="background:#059669; color:white; padding:12px 8px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
-                        <span style="font-size:20px;">&#10003;</span>Accept
+                <!-- Action Buttons - same as admin portal -->
+                <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-top:16px;">
+                    <button onclick="submitAction('ACCEPT')" style="background:#059669; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#10003;</span>Accept
                     </button>
-                    <button onclick="submitAction('COUNTER')" style="background:#2563eb; color:white; padding:12px 8px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
-                        <span style="font-size:20px;">&#8596;</span>Counter
+                    <button onclick="submitAction('COUNTER')" style="background:#2563eb; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#8596;</span>Counter
                     </button>
-                    <button onclick="submitAction('DECLINE')" style="background:#dc2626; color:white; padding:12px 8px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
-                        <span style="font-size:20px;">&#10005;</span>Decline
+                    <button onclick="submitAction('DECLINE')" style="background:#dc2626; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#10005;</span>Decline
                     </button>
-                    <button onclick="submitAction('ESCALATE')" style="background:#7c3aed; color:white; padding:12px 8px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
-                        <span style="font-size:20px;">&#8679;</span>Escalate
+                    <button onclick="submitAction('ESCALATE')" style="background:#7c3aed; color:white; padding:12px; border-radius:8px; font-weight:700; font-size:13px; border:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                        <span style="font-size:18px;">&#8679;</span>Escalate
                     </button>
                 </div>
 
