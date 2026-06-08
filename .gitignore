@@ -31,3 +31,8 @@ volume/
 # SSL certs and logs (local only)
 certs/
 logs/
+
+# Runtime files
+data/groupiq.log
+data/server.pid
+data/watchdog.log
